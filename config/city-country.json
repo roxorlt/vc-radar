@@ -1,0 +1,228 @@
+{
+  "Addison": "美国",
+  "Amsterdam": "荷兰",
+  "Ankara": "土耳其",
+  "Ann Arbor": "美国",
+  "Atlanta": "美国",
+  "Austin": "美国",
+  "Baltimore": "美国",
+  "Bangalore": "印度",
+  "Barcelona": "西班牙",
+  "Beijing": "中国",
+  "Bellevue": "美国",
+  "Bengaluru": "印度",
+  "Berkeley": "美国",
+  "Berlin": "德国",
+  "Bhubaneswar": "印度",
+  "Birmingham": {
+    "default": "有歧义",
+    "when": [
+      {
+        "terms": [
+          "England",
+          "UK"
+        ],
+        "country": "英国"
+      },
+      {
+        "terms": [
+          "Alabama",
+          "AL"
+        ],
+        "country": "美国"
+      }
+    ]
+  },
+  "Boston": "美国",
+  "Boulder": "美国",
+  "Brno": "捷克",
+  "Brooklyn": "美国",
+  "Calgary": "加拿大",
+  "Cambridge": "有歧义",
+  "Cape Town": "南非",
+  "Charlotte": "美国",
+  "Chicago": "美国",
+  "Cincinnati": "美国",
+  "Cleveland": "美国",
+  "Cologne": "德国",
+  "Columbus": "美国",
+  "Copenhagen": "丹麦",
+  "Dallas": "美国",
+  "Delhi": "印度",
+  "Denver": "美国",
+  "Detroit": "美国",
+  "Dresden": "德国",
+  "Dubai": "阿联酋",
+  "Dublin": "爱尔兰",
+  "Durham": "美国",
+  "El Segundo": "美国",
+  "Emeryville": "美国",
+  "George Town": "开曼群岛",
+  "Georgia": {
+    "default": "有歧义",
+    "when": [
+      {
+        "pattern": "\\bcountry\\s+of\\s+Georgia\\b",
+        "explicit": true,
+        "country": "格鲁吉亚"
+      },
+      {
+        "terms": [
+          "Tbilisi"
+        ],
+        "country": "格鲁吉亚"
+      },
+      {
+        "terms": [
+          "GA"
+        ],
+        "us_city": true,
+        "country": "美国"
+      }
+    ],
+    "kind": "region"
+  },
+  "Golden": "美国",
+  "Grass Lake": "美国",
+  "Helsinki": "芬兰",
+  "Hoboken": "美国",
+  "Hong Kong": "中国香港",
+  "Houston": "美国",
+  "Hyderabad": "印度",
+  "Indianapolis": "美国",
+  "Irvine": "美国",
+  "Jersey City": "美国",
+  "Kansas City": "美国",
+  "Lagos": "尼日利亚",
+  "Las Vegas": "美国",
+  "Lisbon": "葡萄牙",
+  "London": "英国",
+  "Los Angeles": "美国",
+  "Lund": "瑞典",
+  "Macau": "中国澳门",
+  "Madison": "美国",
+  "Madrid": "西班牙",
+  "Manhattan": "美国",
+  "Melbourne": "澳大利亚",
+  "Menlo Park": "美国",
+  "Mexico City": "墨西哥",
+  "Miami": "美国",
+  "Milan": "意大利",
+  "Milwaukee": "美国",
+  "Minneapolis": "美国",
+  "Montreal": "加拿大",
+  "Montréal": "加拿大",
+  "Mountain View": "美国",
+  "Mumbai": "印度",
+  "Munich": "德国",
+  "Myrtle Beach": "美国",
+  "NYC": "美国",
+  "Nairobi": "肯尼亚",
+  "Nashville": "美国",
+  "New Delhi": "印度",
+  "New York": "美国",
+  "New York City": "美国",
+  "Newark": "美国",
+  "Oakland": "美国",
+  "Orlando": "美国",
+  "Oslo": "挪威",
+  "Ottawa": "加拿大",
+  "Oxford": "英国",
+  "Palo Alto": "美国",
+  "Paris": "法国",
+  "Pasadena": "美国",
+  "Philadelphia": "美国",
+  "Phoenix": "美国",
+  "Pittsburgh": "美国",
+  "Portland": {
+    "default": "有歧义",
+    "when": [
+      {
+        "terms": [
+          "Oregon",
+          "OR",
+          "Maine",
+          "ME"
+        ],
+        "country": "美国"
+      }
+    ]
+  },
+  "Providence": "美国",
+  "Provo": "美国",
+  "Pune": "印度",
+  "Raleigh": "美国",
+  "Redmond": "美国",
+  "Redwood City": "美国",
+  "Riverside": "美国",
+  "Rome": "意大利",
+  "Sacramento": "美国",
+  "Salt Lake City": "美国",
+  "San Antonio": "美国",
+  "San Diego": "美国",
+  "San Francisco": "美国",
+  "San Jose": "美国",
+  "San Mateo": "美国",
+  "Santa Barbara": "美国",
+  "Santa Clara": "美国",
+  "Santa Monica": "美国",
+  "Santiago": "智利",
+  "Sao Paulo": "巴西",
+  "Seattle": "美国",
+  "Seoul": "韩国",
+  "Shanghai": "中国",
+  "Shenzhen": "中国",
+  "Somerville": "美国",
+  "St. Louis": "美国",
+  "St. Paul": "美国",
+  "Stockholm": "瑞典",
+  "Sunnyvale": "美国",
+  "Sydney": "澳大利亚",
+  "São Paulo": "巴西",
+  "Taipei": "中国台湾",
+  "Taiwan": "中国台湾",
+  "Tampa": "美国",
+  "Tbilisi": "格鲁吉亚",
+  "Tel Aviv": "以色列",
+  "Tel Aviv-Yafo": "以色列",
+  "Tempe": "美国",
+  "Tokyo": "日本",
+  "Toronto": "加拿大",
+  "Toulouse": "法国",
+  "Vancouver": {
+    "default": "加拿大",
+    "when": [
+      {
+        "terms": [
+          "Washington",
+          "WA"
+        ],
+        "country": "美国"
+      }
+    ]
+  },
+  "Washington DC": "美国",
+  "Washington, D.C.": "美国",
+  "Washington, DC": "美国",
+  "Waterloo": "有歧义",
+  "Wilmington": "美国",
+  "Zurich": "瑞士",
+  "Zürich": "瑞士",
+  "上海": "中国",
+  "伦敦": "英国",
+  "北京": "中国",
+  "台北": "中国台湾",
+  "图卢兹": "法国",
+  "奥斯汀": "美国",
+  "巴黎": "法国",
+  "慕尼黑": "德国",
+  "旧金山": "美国",
+  "明尼阿波利斯": "美国",
+  "柏林": "德国",
+  "波士顿": "美国",
+  "洛杉矶": "美国",
+  "深圳": "中国",
+  "澳门": "中国澳门",
+  "纽约": "美国",
+  "西雅图": "美国"
+}

@@ -1,0 +1,66 @@
+{
+  "official": {
+    "domains": [
+      "ycombinator.com",
+      "sec.gov"
+    ],
+    "newswire": [
+      "businesswire.com",
+      "prnewswire.com",
+      "globenewswire.com"
+    ]
+  },
+  "media": [
+    "techcrunch.com",
+    "news.crunchbase.com",
+    "fortune.com",
+    "alleywatch.com",
+    "strictlyvc.com",
+    "venturebeat.com",
+    "finsmes.com",
+    "thefintechtimes.com",
+    "economictimes.indiatimes.com",
+    "entrepreneur.com",
+    "fiercehealthcare.com",
+    "enlit.world",
+    "fintechbits.com"
+  ],
+  "other": [
+    "parsers.vc",
+    "valueaddvc.com",
+    "startuply.com",
+    "veilstrat.com",
+    "devcuration.com",
+    "mapco.com",
+    "tracxn.com",
+    "signalbase.com",
+    "trysignalbase.com",
+    "linkedin.com",
+    "medium.com",
+    "substack.com",
+    "pitchbook.com",
+    "dealroom.co",
+    "nordic9.com",
+    "caplight.com",
+    "cbinsights.com",
+    "seedtable.com",
+    "businesswirenews.com"
+  ],
+  "common_investors": [
+    "Y Combinator",
+    "General Catalyst"
+  ],
+  "non_names": [
+    "others",
+    "undisclosed",
+    "various",
+    "existing investors",
+    "angel investors",
+    "未披露",
+    "不详",
+    "未知",
+    "未公布"
+  ],
+  "similarity_threshold": 0.8,
+  "similarity_algorithm": "difflib.SequenceMatcher ratio on lowercased punctuation-stripped snippet"
+}

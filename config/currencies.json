@@ -1,0 +1,685 @@
+{
+  "$": {
+    "code": "USD",
+    "name": "美元",
+    "prefix": "$"
+  },
+  "US$": {
+    "code": "USD",
+    "name": "美元",
+    "prefix": "$"
+  },
+  "US $": {
+    "code": "USD",
+    "name": "美元",
+    "prefix": "$"
+  },
+  "USD": {
+    "code": "USD",
+    "name": "美元",
+    "prefix": "$"
+  },
+  "dollar": {
+    "code": "USD",
+    "name": "美元",
+    "prefix": "$"
+  },
+  "dollars": {
+    "code": "USD",
+    "name": "美元",
+    "prefix": "$"
+  },
+  "US dollars": {
+    "code": "USD",
+    "name": "美元",
+    "prefix": "$"
+  },
+  "U.S. dollars": {
+    "code": "USD",
+    "name": "美元",
+    "prefix": "$"
+  },
+  "美元": {
+    "code": "USD",
+    "name": "美元",
+    "prefix": "$"
+  },
+  "€": {
+    "code": "EUR",
+    "name": "欧元",
+    "prefix": "€"
+  },
+  "EUR": {
+    "code": "EUR",
+    "name": "欧元",
+    "prefix": "€"
+  },
+  "euro": {
+    "code": "EUR",
+    "name": "欧元",
+    "prefix": "€"
+  },
+  "euros": {
+    "code": "EUR",
+    "name": "欧元",
+    "prefix": "€"
+  },
+  "欧元": {
+    "code": "EUR",
+    "name": "欧元",
+    "prefix": "€"
+  },
+  "£": {
+    "code": "GBP",
+    "name": "英镑",
+    "prefix": "£"
+  },
+  "GBP": {
+    "code": "GBP",
+    "name": "英镑",
+    "prefix": "£"
+  },
+  "pound": {
+    "code": "GBP",
+    "name": "英镑",
+    "prefix": "£"
+  },
+  "pounds": {
+    "code": "GBP",
+    "name": "英镑",
+    "prefix": "£"
+  },
+  "sterling": {
+    "code": "GBP",
+    "name": "英镑",
+    "prefix": "£"
+  },
+  "英镑": {
+    "code": "GBP",
+    "name": "英镑",
+    "prefix": "£"
+  },
+  "₹": {
+    "code": "INR",
+    "name": "印度卢比",
+    "prefix": "₹"
+  },
+  "Rs": {
+    "code": "INR",
+    "name": "印度卢比",
+    "prefix": "₹"
+  },
+  "Rs.": {
+    "code": "INR",
+    "name": "印度卢比",
+    "prefix": "₹"
+  },
+  "INR": {
+    "code": "INR",
+    "name": "印度卢比",
+    "prefix": "₹"
+  },
+  "rupee": {
+    "code": "INR",
+    "name": "印度卢比",
+    "prefix": "₹"
+  },
+  "rupees": {
+    "code": "INR",
+    "name": "印度卢比",
+    "prefix": "₹"
+  },
+  "卢比": {
+    "code": "INR",
+    "name": "印度卢比",
+    "prefix": "₹"
+  },
+  "C$": {
+    "code": "CAD",
+    "name": "加元",
+    "prefix": "C$"
+  },
+  "CA$": {
+    "code": "CAD",
+    "name": "加元",
+    "prefix": "C$"
+  },
+  "CAD": {
+    "code": "CAD",
+    "name": "加元",
+    "prefix": "C$"
+  },
+  "Canadian dollar": {
+    "code": "CAD",
+    "name": "加元",
+    "prefix": "C$"
+  },
+  "Canadian dollars": {
+    "code": "CAD",
+    "name": "加元",
+    "prefix": "C$"
+  },
+  "加元": {
+    "code": "CAD",
+    "name": "加元",
+    "prefix": "C$"
+  },
+  "A$": {
+    "code": "AUD",
+    "name": "澳元",
+    "prefix": "A$"
+  },
+  "AU$": {
+    "code": "AUD",
+    "name": "澳元",
+    "prefix": "A$"
+  },
+  "AUD": {
+    "code": "AUD",
+    "name": "澳元",
+    "prefix": "A$"
+  },
+  "Australian dollar": {
+    "code": "AUD",
+    "name": "澳元",
+    "prefix": "A$"
+  },
+  "Australian dollars": {
+    "code": "AUD",
+    "name": "澳元",
+    "prefix": "A$"
+  },
+  "澳元": {
+    "code": "AUD",
+    "name": "澳元",
+    "prefix": "A$"
+  },
+  "S$": {
+    "code": "SGD",
+    "name": "新加坡元",
+    "prefix": "S$"
+  },
+  "SGD": {
+    "code": "SGD",
+    "name": "新加坡元",
+    "prefix": "S$"
+  },
+  "Singapore dollar": {
+    "code": "SGD",
+    "name": "新加坡元",
+    "prefix": "S$"
+  },
+  "Singapore dollars": {
+    "code": "SGD",
+    "name": "新加坡元",
+    "prefix": "S$"
+  },
+  "新加坡元": {
+    "code": "SGD",
+    "name": "新加坡元",
+    "prefix": "S$"
+  },
+  "HK$": {
+    "code": "HKD",
+    "name": "港元",
+    "prefix": "HK$"
+  },
+  "HKD": {
+    "code": "HKD",
+    "name": "港元",
+    "prefix": "HK$"
+  },
+  "Hong Kong dollar": {
+    "code": "HKD",
+    "name": "港元",
+    "prefix": "HK$"
+  },
+  "Hong Kong dollars": {
+    "code": "HKD",
+    "name": "港元",
+    "prefix": "HK$"
+  },
+  "港元": {
+    "code": "HKD",
+    "name": "港元",
+    "prefix": "HK$"
+  },
+  "港币": {
+    "code": "HKD",
+    "name": "港元",
+    "prefix": "HK$"
+  },
+  "₩": {
+    "code": "KRW",
+    "name": "韩元",
+    "prefix": "₩"
+  },
+  "KRW": {
+    "code": "KRW",
+    "name": "韩元",
+    "prefix": "₩"
+  },
+  "won": {
+    "code": "KRW",
+    "name": "韩元",
+    "prefix": "₩"
+  },
+  "韩元": {
+    "code": "KRW",
+    "name": "韩元",
+    "prefix": "₩"
+  },
+  "₪": {
+    "code": "ILS",
+    "name": "以色列新谢克尔",
+    "prefix": "₪"
+  },
+  "ILS": {
+    "code": "ILS",
+    "name": "以色列新谢克尔",
+    "prefix": "₪"
+  },
+  "NIS": {
+    "code": "ILS",
+    "name": "以色列新谢克尔",
+    "prefix": "₪"
+  },
+  "shekel": {
+    "code": "ILS",
+    "name": "以色列新谢克尔",
+    "prefix": "₪"
+  },
+  "shekels": {
+    "code": "ILS",
+    "name": "以色列新谢克尔",
+    "prefix": "₪"
+  },
+  "谢克尔": {
+    "code": "ILS",
+    "name": "以色列新谢克尔",
+    "prefix": "₪"
+  },
+  "RMB": {
+    "code": "CNY",
+    "name": "人民币",
+    "prefix": "人民币 "
+  },
+  "CNY": {
+    "code": "CNY",
+    "name": "人民币",
+    "prefix": "人民币 "
+  },
+  "yuan": {
+    "code": "CNY",
+    "name": "人民币",
+    "prefix": "人民币 "
+  },
+  "renminbi": {
+    "code": "CNY",
+    "name": "人民币",
+    "prefix": "人民币 "
+  },
+  "人民币": {
+    "code": "CNY",
+    "name": "人民币",
+    "prefix": "人民币 "
+  },
+  "JPY": {
+    "code": "JPY",
+    "name": "日元",
+    "prefix": "日元 "
+  },
+  "yen": {
+    "code": "JPY",
+    "name": "日元",
+    "prefix": "日元 "
+  },
+  "円": {
+    "code": "JPY",
+    "name": "日元",
+    "prefix": "日元 "
+  },
+  "日元": {
+    "code": "JPY",
+    "name": "日元",
+    "prefix": "日元 "
+  },
+  "CHF": {
+    "code": "CHF",
+    "name": "瑞士法郎",
+    "prefix": "瑞士法郎 "
+  },
+  "Swiss franc": {
+    "code": "CHF",
+    "name": "瑞士法郎",
+    "prefix": "瑞士法郎 "
+  },
+  "Swiss francs": {
+    "code": "CHF",
+    "name": "瑞士法郎",
+    "prefix": "瑞士法郎 "
+  },
+  "瑞士法郎": {
+    "code": "CHF",
+    "name": "瑞士法郎",
+    "prefix": "瑞士法郎 "
+  },
+  "SEK": {
+    "code": "SEK",
+    "name": "瑞典克朗",
+    "prefix": "瑞典克朗 "
+  },
+  "Swedish krona": {
+    "code": "SEK",
+    "name": "瑞典克朗",
+    "prefix": "瑞典克朗 "
+  },
+  "Swedish kronor": {
+    "code": "SEK",
+    "name": "瑞典克朗",
+    "prefix": "瑞典克朗 "
+  },
+  "瑞典克朗": {
+    "code": "SEK",
+    "name": "瑞典克朗",
+    "prefix": "瑞典克朗 "
+  },
+  "NZD": {
+    "code": "NZD",
+    "name": "新西兰元",
+    "prefix": "新西兰元 "
+  },
+  "NZ$": {
+    "code": "NZD",
+    "name": "新西兰元",
+    "prefix": "新西兰元 "
+  },
+  "New Zealand dollars": {
+    "code": "NZD",
+    "name": "新西兰元",
+    "prefix": "新西兰元 "
+  },
+  "新西兰元": {
+    "code": "NZD",
+    "name": "新西兰元",
+    "prefix": "新西兰元 "
+  },
+  "NOK": {
+    "code": "NOK",
+    "name": "挪威克朗",
+    "prefix": "挪威克朗 "
+  },
+  "挪威克朗": {
+    "code": "NOK",
+    "name": "挪威克朗",
+    "prefix": "挪威克朗 "
+  },
+  "DKK": {
+    "code": "DKK",
+    "name": "丹麦克朗",
+    "prefix": "丹麦克朗 "
+  },
+  "丹麦克朗": {
+    "code": "DKK",
+    "name": "丹麦克朗",
+    "prefix": "丹麦克朗 "
+  },
+  "PLN": {
+    "code": "PLN",
+    "name": "波兰兹罗提",
+    "prefix": "波兰兹罗提 "
+  },
+  "波兰兹罗提": {
+    "code": "PLN",
+    "name": "波兰兹罗提",
+    "prefix": "波兰兹罗提 "
+  },
+  "CZK": {
+    "code": "CZK",
+    "name": "捷克克朗",
+    "prefix": "捷克克朗 "
+  },
+  "捷克克朗": {
+    "code": "CZK",
+    "name": "捷克克朗",
+    "prefix": "捷克克朗 "
+  },
+  "HUF": {
+    "code": "HUF",
+    "name": "匈牙利福林",
+    "prefix": "匈牙利福林 "
+  },
+  "匈牙利福林": {
+    "code": "HUF",
+    "name": "匈牙利福林",
+    "prefix": "匈牙利福林 "
+  },
+  "RON": {
+    "code": "RON",
+    "name": "罗马尼亚列伊",
+    "prefix": "罗马尼亚列伊 "
+  },
+  "罗马尼亚列伊": {
+    "code": "RON",
+    "name": "罗马尼亚列伊",
+    "prefix": "罗马尼亚列伊 "
+  },
+  "BGN": {
+    "code": "BGN",
+    "name": "保加利亚列弗",
+    "prefix": "保加利亚列弗 "
+  },
+  "保加利亚列弗": {
+    "code": "BGN",
+    "name": "保加利亚列弗",
+    "prefix": "保加利亚列弗 "
+  },
+  "TRY": {
+    "code": "TRY",
+    "name": "土耳其里拉",
+    "prefix": "土耳其里拉 "
+  },
+  "土耳其里拉": {
+    "code": "TRY",
+    "name": "土耳其里拉",
+    "prefix": "土耳其里拉 "
+  },
+  "BRL": {
+    "code": "BRL",
+    "name": "巴西雷亚尔",
+    "prefix": "巴西雷亚尔 "
+  },
+  "巴西雷亚尔": {
+    "code": "BRL",
+    "name": "巴西雷亚尔",
+    "prefix": "巴西雷亚尔 "
+  },
+  "MXN": {
+    "code": "MXN",
+    "name": "墨西哥比索",
+    "prefix": "墨西哥比索 "
+  },
+  "墨西哥比索": {
+    "code": "MXN",
+    "name": "墨西哥比索",
+    "prefix": "墨西哥比索 "
+  },
+  "ZAR": {
+    "code": "ZAR",
+    "name": "南非兰特",
+    "prefix": "南非兰特 "
+  },
+  "南非兰特": {
+    "code": "ZAR",
+    "name": "南非兰特",
+    "prefix": "南非兰特 "
+  },
+  "IDR": {
+    "code": "IDR",
+    "name": "印度尼西亚盾",
+    "prefix": "印度尼西亚盾 "
+  },
+  "印度尼西亚盾": {
+    "code": "IDR",
+    "name": "印度尼西亚盾",
+    "prefix": "印度尼西亚盾 "
+  },
+  "MYR": {
+    "code": "MYR",
+    "name": "马来西亚林吉特",
+    "prefix": "马来西亚林吉特 "
+  },
+  "马来西亚林吉特": {
+    "code": "MYR",
+    "name": "马来西亚林吉特",
+    "prefix": "马来西亚林吉特 "
+  },
+  "PHP": {
+    "code": "PHP",
+    "name": "菲律宾比索",
+    "prefix": "菲律宾比索 "
+  },
+  "菲律宾比索": {
+    "code": "PHP",
+    "name": "菲律宾比索",
+    "prefix": "菲律宾比索 "
+  },
+  "THB": {
+    "code": "THB",
+    "name": "泰铢",
+    "prefix": "泰铢 "
+  },
+  "泰铢": {
+    "code": "THB",
+    "name": "泰铢",
+    "prefix": "泰铢 "
+  },
+  "ISK": {
+    "code": "ISK",
+    "name": "冰岛克朗",
+    "prefix": "冰岛克朗 "
+  },
+  "冰岛克朗": {
+    "code": "ISK",
+    "name": "冰岛克朗",
+    "prefix": "冰岛克朗 "
+  },
+  "CYP": {
+    "code": "CYP",
+    "name": "塞浦路斯镑",
+    "prefix": "塞浦路斯镑 "
+  },
+  "塞浦路斯镑": {
+    "code": "CYP",
+    "name": "塞浦路斯镑",
+    "prefix": "塞浦路斯镑 "
+  },
+  "EEK": {
+    "code": "EEK",
+    "name": "爱沙尼亚克朗",
+    "prefix": "爱沙尼亚克朗 "
+  },
+  "爱沙尼亚克朗": {
+    "code": "EEK",
+    "name": "爱沙尼亚克朗",
+    "prefix": "爱沙尼亚克朗 "
+  },
+  "HRK": {
+    "code": "HRK",
+    "name": "克罗地亚库纳",
+    "prefix": "克罗地亚库纳 "
+  },
+  "克罗地亚库纳": {
+    "code": "HRK",
+    "name": "克罗地亚库纳",
+    "prefix": "克罗地亚库纳 "
+  },
+  "LTL": {
+    "code": "LTL",
+    "name": "立陶宛立特",
+    "prefix": "立陶宛立特 "
+  },
+  "立陶宛立特": {
+    "code": "LTL",
+    "name": "立陶宛立特",
+    "prefix": "立陶宛立特 "
+  },
+  "LVL": {
+    "code": "LVL",
+    "name": "拉脱维亚拉特",
+    "prefix": "拉脱维亚拉特 "
+  },
+  "拉脱维亚拉特": {
+    "code": "LVL",
+    "name": "拉脱维亚拉特",
+    "prefix": "拉脱维亚拉特 "
+  },
+  "MTL": {
+    "code": "MTL",
+    "name": "马耳他里拉",
+    "prefix": "马耳他里拉 "
+  },
+  "马耳他里拉": {
+    "code": "MTL",
+    "name": "马耳他里拉",
+    "prefix": "马耳他里拉 "
+  },
+  "ROL": {
+    "code": "ROL",
+    "name": "旧罗马尼亚列伊",
+    "prefix": "旧罗马尼亚列伊 "
+  },
+  "旧罗马尼亚列伊": {
+    "code": "ROL",
+    "name": "旧罗马尼亚列伊",
+    "prefix": "旧罗马尼亚列伊 "
+  },
+  "SIT": {
+    "code": "SIT",
+    "name": "斯洛文尼亚托拉尔",
+    "prefix": "斯洛文尼亚托拉尔 "
+  },
+  "斯洛文尼亚托拉尔": {
+    "code": "SIT",
+    "name": "斯洛文尼亚托拉尔",
+    "prefix": "斯洛文尼亚托拉尔 "
+  },
+  "SKK": {
+    "code": "SKK",
+    "name": "斯洛伐克克朗",
+    "prefix": "斯洛伐克克朗 "
+  },
+  "斯洛伐克克朗": {
+    "code": "SKK",
+    "name": "斯洛伐克克朗",
+    "prefix": "斯洛伐克克朗 "
+  },
+  "RUB": {
+    "code": "RUB",
+    "name": "俄罗斯卢布",
+    "prefix": "俄罗斯卢布 "
+  },
+  "俄罗斯卢布": {
+    "code": "RUB",
+    "name": "俄罗斯卢布",
+    "prefix": "俄罗斯卢布 "
+  },
+  "元": {
+    "code": "CNY",
+    "name": "人民币",
+    "prefix": "人民币 ",
+    "context": "yuan_unit"
+  },
+  "¥": {
+    "code": null,
+    "name": "币种待确认",
+    "prefix": "¥",
+    "context": "yuan_or_yen"
+  },
+  "￥": {
+    "code": null,
+    "name": "币种待确认",
+    "prefix": "￥",
+    "context": "yuan_or_yen"
+  }
+}

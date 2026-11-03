@@ -1,0 +1,7 @@
+<rss version="2.0"><channel>
+  <item><guid>a1</guid><link>https://example.invalid/single</link><title>Mintive Raises $7M for Shared Notes</title><pubDate>Thu, 29 Oct 2026 21:00:00 GMT</pubDate><description>A fictional financing.</description></item>
+  <item><guid>a2</guid><link>https://example.invalid/daily</link><title>The Daily Funding Report</title><pubDate>Thu, 29 Oct 2026 20:00:00 GMT</pubDate></item>
+  <item><guid>a3</guid><link>https://example.invalid/weekly</link><title>The Weekly Funding Report</title><pubDate>Thu, 29 Oct 2026 19:00:00 GMT</pubDate></item>
+  <item><guid>a4</guid><link>https://example.invalid/monthly</link><title>Funding Report for October 2026</title><pubDate>Thu, 29 Oct 2026 18:00:00 GMT</pubDate></item>
+  <item><guid>a5</guid><link>https://example.invalid/multiple</link><title>Terse and Dream Raise $20M Together</title><pubDate>Thu, 29 Oct 2026 17:00:00 GMT</pubDate></item>
+</channel></rss>

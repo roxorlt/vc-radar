@@ -1,0 +1,1940 @@
+{
+  "countries": {
+    "AD": {
+      "name": "安道尔",
+      "aliases": [
+        "Andorra",
+        "Principality of Andorra"
+      ]
+    },
+    "AE": {
+      "name": "阿联酋",
+      "aliases": [
+        "United Arab Emirates",
+        "UAE",
+        "U.A.E."
+      ]
+    },
+    "AF": {
+      "name": "阿富汗",
+      "aliases": [
+        "Afghanistan",
+        "Islamic Republic of Afghanistan"
+      ]
+    },
+    "AG": {
+      "name": "安提瓜和巴布达",
+      "aliases": [
+        "Antigua and Barbuda"
+      ]
+    },
+    "AI": {
+      "name": "安圭拉",
+      "aliases": [
+        "Anguilla"
+      ]
+    },
+    "AL": {
+      "name": "阿尔巴尼亚",
+      "aliases": [
+        "Albania",
+        "Republic of Albania"
+      ]
+    },
+    "AM": {
+      "name": "亚美尼亚",
+      "aliases": [
+        "Armenia",
+        "Republic of Armenia"
+      ]
+    },
+    "AO": {
+      "name": "安哥拉",
+      "aliases": [
+        "Angola",
+        "Republic of Angola"
+      ]
+    },
+    "AQ": {
+      "name": "南极洲",
+      "aliases": [
+        "Antarctica"
+      ]
+    },
+    "AR": {
+      "name": "阿根廷",
+      "aliases": [
+        "Argentina",
+        "Argentine Republic"
+      ]
+    },
+    "AS": {
+      "name": "美属萨摩亚",
+      "aliases": [
+        "American Samoa"
+      ]
+    },
+    "AT": {
+      "name": "奥地利",
+      "aliases": [
+        "Austria",
+        "Republic of Austria"
+      ]
+    },
+    "AU": {
+      "name": "澳大利亚",
+      "aliases": [
+        "Australia"
+      ]
+    },
+    "AW": {
+      "name": "阿鲁巴",
+      "aliases": [
+        "Aruba"
+      ]
+    },
+    "AX": {
+      "name": "奥兰群岛",
+      "aliases": [
+        "Åland Islands"
+      ]
+    },
+    "AZ": {
+      "name": "阿塞拜疆",
+      "aliases": [
+        "Azerbaijan",
+        "Republic of Azerbaijan"
+      ]
+    },
+    "BA": {
+      "name": "波黑",
+      "aliases": [
+        "Bosnia and Herzegovina",
+        "Republic of Bosnia and Herzegovina"
+      ]
+    },
+    "BB": {
+      "name": "巴巴多斯",
+      "aliases": [
+        "Barbados"
+      ]
+    },
+    "BD": {
+      "name": "孟加拉国",
+      "aliases": [
+        "Bangladesh",
+        "People's Republic of Bangladesh"
+      ]
+    },
+    "BE": {
+      "name": "比利时",
+      "aliases": [
+        "Belgium",
+        "Kingdom of Belgium"
+      ]
+    },
+    "BF": {
+      "name": "布基纳法索",
+      "aliases": [
+        "Burkina Faso"
+      ]
+    },
+    "BG": {
+      "name": "保加利亚",
+      "aliases": [
+        "Bulgaria",
+        "Republic of Bulgaria"
+      ]
+    },
+    "BH": {
+      "name": "巴林",
+      "aliases": [
+        "Bahrain",
+        "Kingdom of Bahrain"
+      ]
+    },
+    "BI": {
+      "name": "布隆迪",
+      "aliases": [
+        "Burundi",
+        "Republic of Burundi"
+      ]
+    },
+    "BJ": {
+      "name": "贝宁",
+      "aliases": [
+        "Benin",
+        "Republic of Benin"
+      ]
+    },
+    "BL": {
+      "name": "圣巴泰勒米",
+      "aliases": [
+        "Saint Barthélemy"
+      ]
+    },
+    "BM": {
+      "name": "百慕大",
+      "aliases": [
+        "Bermuda"
+      ]
+    },
+    "BN": {
+      "name": "文莱",
+      "aliases": [
+        "Brunei Darussalam",
+        "Brunei"
+      ]
+    },
+    "BO": {
+      "name": "玻利维亚",
+      "aliases": [
+        "Bolivia, Plurinational State of",
+        "Plurinational State of Bolivia",
+        "Bolivia"
+      ]
+    },
+    "BQ": {
+      "name": "荷兰加勒比区",
+      "aliases": [
+        "Bonaire, Sint Eustatius and Saba"
+      ]
+    },
+    "BR": {
+      "name": "巴西",
+      "aliases": [
+        "Brazil",
+        "Federative Republic of Brazil"
+      ]
+    },
+    "BS": {
+      "name": "巴哈马",
+      "aliases": [
+        "Bahamas",
+        "Commonwealth of the Bahamas"
+      ]
+    },
+    "BT": {
+      "name": "不丹",
+      "aliases": [
+        "Bhutan",
+        "Kingdom of Bhutan"
+      ]
+    },
+    "BV": {
+      "name": "布韦岛",
+      "aliases": [
+        "Bouvet Island"
+      ]
+    },
+    "BW": {
+      "name": "博茨瓦纳",
+      "aliases": [
+        "Botswana",
+        "Republic of Botswana"
+      ]
+    },
+    "BY": {
+      "name": "白俄罗斯",
+      "aliases": [
+        "Belarus",
+        "Republic of Belarus"
+      ]
+    },
+    "BZ": {
+      "name": "伯利兹",
+      "aliases": [
+        "Belize"
+      ]
+    },
+    "CA": {
+      "name": "加拿大",
+      "aliases": [
+        "Canada"
+      ]
+    },
+    "CC": {
+      "name": "科科斯（基林）群岛",
+      "aliases": [
+        "Cocos (Keeling) Islands"
+      ]
+    },
+    "CD": {
+      "name": "刚果（金）",
+      "aliases": [
+        "Congo, The Democratic Republic of the",
+        "Democratic Republic of the Congo",
+        "DR Congo",
+        "Congo-Kinshasa"
+      ]
+    },
+    "CF": {
+      "name": "中非",
+      "aliases": [
+        "Central African Republic"
+      ]
+    },
+    "CG": {
+      "name": "刚果（布）",
+      "aliases": [
+        "Congo",
+        "Republic of the Congo",
+        "Congo-Brazzaville"
+      ]
+    },
+    "CH": {
+      "name": "瑞士",
+      "aliases": [
+        "Switzerland",
+        "Swiss Confederation"
+      ]
+    },
+    "CI": {
+      "name": "科特迪瓦",
+      "aliases": [
+        "Côte d'Ivoire",
+        "Republic of Côte d'Ivoire",
+        "Ivory Coast",
+        "Cote d'Ivoire"
+      ]
+    },
+    "CK": {
+      "name": "库克群岛",
+      "aliases": [
+        "Cook Islands"
+      ]
+    },
+    "CL": {
+      "name": "智利",
+      "aliases": [
+        "Chile",
+        "Republic of Chile"
+      ]
+    },
+    "CM": {
+      "name": "喀麦隆",
+      "aliases": [
+        "Cameroon",
+        "Republic of Cameroon"
+      ]
+    },
+    "CN": {
+      "name": "中国",
+      "aliases": [
+        "China",
+        "People's Republic of China",
+        "People’s Republic of China",
+        "PRC"
+      ]
+    },
+    "CO": {
+      "name": "哥伦比亚",
+      "aliases": [
+        "Colombia",
+        "Republic of Colombia"
+      ]
+    },
+    "CR": {
+      "name": "哥斯达黎加",
+      "aliases": [
+        "Costa Rica",
+        "Republic of Costa Rica"
+      ]
+    },
+    "CU": {
+      "name": "古巴",
+      "aliases": [
+        "Cuba",
+        "Republic of Cuba"
+      ]
+    },
+    "CV": {
+      "name": "佛得角",
+      "aliases": [
+        "Cabo Verde",
+        "Republic of Cabo Verde",
+        "Cape Verde"
+      ]
+    },
+    "CW": {
+      "name": "库拉索",
+      "aliases": [
+        "Curaçao"
+      ]
+    },
+    "CX": {
+      "name": "圣诞岛",
+      "aliases": [
+        "Christmas Island"
+      ]
+    },
+    "CY": {
+      "name": "塞浦路斯",
+      "aliases": [
+        "Cyprus",
+        "Republic of Cyprus"
+      ]
+    },
+    "CZ": {
+      "name": "捷克",
+      "aliases": [
+        "Czechia",
+        "Czech Republic"
+      ]
+    },
+    "DE": {
+      "name": "德国",
+      "aliases": [
+        "Germany",
+        "Federal Republic of Germany"
+      ]
+    },
+    "DJ": {
+      "name": "吉布提",
+      "aliases": [
+        "Djibouti",
+        "Republic of Djibouti"
+      ]
+    },
+    "DK": {
+      "name": "丹麦",
+      "aliases": [
+        "Denmark",
+        "Kingdom of Denmark"
+      ]
+    },
+    "DM": {
+      "name": "多米尼克",
+      "aliases": [
+        "Dominica",
+        "Commonwealth of Dominica"
+      ]
+    },
+    "DO": {
+      "name": "多米尼加",
+      "aliases": [
+        "Dominican Republic"
+      ]
+    },
+    "DZ": {
+      "name": "阿尔及利亚",
+      "aliases": [
+        "Algeria",
+        "People's Democratic Republic of Algeria"
+      ]
+    },
+    "EC": {
+      "name": "厄瓜多尔",
+      "aliases": [
+        "Ecuador",
+        "Republic of Ecuador"
+      ]
+    },
+    "EE": {
+      "name": "爱沙尼亚",
+      "aliases": [
+        "Estonia",
+        "Republic of Estonia"
+      ]
+    },
+    "EG": {
+      "name": "埃及",
+      "aliases": [
+        "Egypt",
+        "Arab Republic of Egypt"
+      ]
+    },
+    "EH": {
+      "name": "西撒哈拉",
+      "aliases": [
+        "Western Sahara"
+      ]
+    },
+    "ER": {
+      "name": "厄立特里亚",
+      "aliases": [
+        "Eritrea",
+        "the State of Eritrea"
+      ]
+    },
+    "ES": {
+      "name": "西班牙",
+      "aliases": [
+        "Spain",
+        "Kingdom of Spain"
+      ]
+    },
+    "ET": {
+      "name": "埃塞俄比亚",
+      "aliases": [
+        "Ethiopia",
+        "Federal Democratic Republic of Ethiopia"
+      ]
+    },
+    "FI": {
+      "name": "芬兰",
+      "aliases": [
+        "Finland",
+        "Republic of Finland"
+      ]
+    },
+    "FJ": {
+      "name": "斐济",
+      "aliases": [
+        "Fiji",
+        "Republic of Fiji"
+      ]
+    },
+    "FK": {
+      "name": "马尔维纳斯群岛（福克兰群岛）",
+      "aliases": [
+        "Falkland Islands (Malvinas)"
+      ]
+    },
+    "FM": {
+      "name": "密克罗尼西亚",
+      "aliases": [
+        "Micronesia, Federated States of",
+        "Federated States of Micronesia"
+      ]
+    },
+    "FO": {
+      "name": "法罗群岛",
+      "aliases": [
+        "Faroe Islands"
+      ]
+    },
+    "FR": {
+      "name": "法国",
+      "aliases": [
+        "France",
+        "French Republic"
+      ]
+    },
+    "GA": {
+      "name": "加蓬",
+      "aliases": [
+        "Gabon",
+        "Gabonese Republic"
+      ]
+    },
+    "GB": {
+      "name": "英国",
+      "aliases": [
+        "United Kingdom",
+        "United Kingdom of Great Britain and Northern Ireland",
+        "UK",
+        "U.K.",
+        "Britain",
+        "Great Britain",
+        "England",
+        "Scotland",
+        "Wales",
+        "Northern Ireland"
+      ]
+    },
+    "GD": {
+      "name": "格林纳达",
+      "aliases": [
+        "Grenada"
+      ]
+    },
+    "GE": {
+      "name": "格鲁吉亚",
+      "aliases": [
+        "Georgia"
+      ]
+    },
+    "GF": {
+      "name": "法属圭亚那",
+      "aliases": [
+        "French Guiana"
+      ]
+    },
+    "GG": {
+      "name": "根西",
+      "aliases": [
+        "Guernsey"
+      ]
+    },
+    "GH": {
+      "name": "加纳",
+      "aliases": [
+        "Ghana",
+        "Republic of Ghana"
+      ]
+    },
+    "GI": {
+      "name": "直布罗陀",
+      "aliases": [
+        "Gibraltar"
+      ]
+    },
+    "GL": {
+      "name": "格陵兰",
+      "aliases": [
+        "Greenland"
+      ]
+    },
+    "GM": {
+      "name": "冈比亚",
+      "aliases": [
+        "Gambia",
+        "Republic of the Gambia"
+      ]
+    },
+    "GN": {
+      "name": "几内亚",
+      "aliases": [
+        "Guinea",
+        "Republic of Guinea"
+      ]
+    },
+    "GP": {
+      "name": "瓜德罗普",
+      "aliases": [
+        "Guadeloupe"
+      ]
+    },
+    "GQ": {
+      "name": "赤道几内亚",
+      "aliases": [
+        "Equatorial Guinea",
+        "Republic of Equatorial Guinea"
+      ]
+    },
+    "GR": {
+      "name": "希腊",
+      "aliases": [
+        "Greece",
+        "Hellenic Republic"
+      ]
+    },
+    "GS": {
+      "name": "南乔治亚和南桑威奇群岛",
+      "aliases": [
+        "South Georgia and the South Sandwich Islands"
+      ]
+    },
+    "GT": {
+      "name": "危地马拉",
+      "aliases": [
+        "Guatemala",
+        "Republic of Guatemala"
+      ]
+    },
+    "GU": {
+      "name": "关岛",
+      "aliases": [
+        "Guam"
+      ]
+    },
+    "GW": {
+      "name": "几内亚比绍",
+      "aliases": [
+        "Guinea-Bissau",
+        "Republic of Guinea-Bissau"
+      ]
+    },
+    "GY": {
+      "name": "圭亚那",
+      "aliases": [
+        "Guyana",
+        "Republic of Guyana"
+      ]
+    },
+    "HK": {
+      "name": "中国香港",
+      "aliases": [
+        "Hong Kong",
+        "Hong Kong Special Administrative Region of China",
+        "香港"
+      ]
+    },
+    "HM": {
+      "name": "赫德岛和麦克唐纳群岛",
+      "aliases": [
+        "Heard Island and McDonald Islands"
+      ]
+    },
+    "HN": {
+      "name": "洪都拉斯",
+      "aliases": [
+        "Honduras",
+        "Republic of Honduras"
+      ]
+    },
+    "HR": {
+      "name": "克罗地亚",
+      "aliases": [
+        "Croatia",
+        "Republic of Croatia"
+      ]
+    },
+    "HT": {
+      "name": "海地",
+      "aliases": [
+        "Haiti",
+        "Republic of Haiti"
+      ]
+    },
+    "HU": {
+      "name": "匈牙利",
+      "aliases": [
+        "Hungary"
+      ]
+    },
+    "ID": {
+      "name": "印度尼西亚",
+      "aliases": [
+        "Indonesia",
+        "Republic of Indonesia"
+      ]
+    },
+    "IE": {
+      "name": "爱尔兰",
+      "aliases": [
+        "Ireland"
+      ]
+    },
+    "IL": {
+      "name": "以色列",
+      "aliases": [
+        "Israel",
+        "State of Israel"
+      ]
+    },
+    "IM": {
+      "name": "马恩岛",
+      "aliases": [
+        "Isle of Man"
+      ]
+    },
+    "IN": {
+      "name": "印度",
+      "aliases": [
+        "India",
+        "Republic of India"
+      ]
+    },
+    "IO": {
+      "name": "英属印度洋领地",
+      "aliases": [
+        "British Indian Ocean Territory"
+      ]
+    },
+    "IQ": {
+      "name": "伊拉克",
+      "aliases": [
+        "Iraq",
+        "Republic of Iraq"
+      ]
+    },
+    "IR": {
+      "name": "伊朗",
+      "aliases": [
+        "Iran, Islamic Republic of",
+        "Islamic Republic of Iran",
+        "Iran"
+      ]
+    },
+    "IS": {
+      "name": "冰岛",
+      "aliases": [
+        "Iceland",
+        "Republic of Iceland"
+      ]
+    },
+    "IT": {
+      "name": "意大利",
+      "aliases": [
+        "Italy",
+        "Italian Republic"
+      ]
+    },
+    "JE": {
+      "name": "泽西",
+      "aliases": [
+        "Jersey"
+      ]
+    },
+    "JM": {
+      "name": "牙买加",
+      "aliases": [
+        "Jamaica"
+      ]
+    },
+    "JO": {
+      "name": "约旦",
+      "aliases": [
+        "Jordan",
+        "Hashemite Kingdom of Jordan"
+      ]
+    },
+    "JP": {
+      "name": "日本",
+      "aliases": [
+        "Japan"
+      ]
+    },
+    "KE": {
+      "name": "肯尼亚",
+      "aliases": [
+        "Kenya",
+        "Republic of Kenya"
+      ]
+    },
+    "KG": {
+      "name": "吉尔吉斯斯坦",
+      "aliases": [
+        "Kyrgyzstan",
+        "Kyrgyz Republic"
+      ]
+    },
+    "KH": {
+      "name": "柬埔寨",
+      "aliases": [
+        "Cambodia",
+        "Kingdom of Cambodia"
+      ]
+    },
+    "KI": {
+      "name": "基里巴斯",
+      "aliases": [
+        "Kiribati",
+        "Republic of Kiribati"
+      ]
+    },
+    "KM": {
+      "name": "科摩罗",
+      "aliases": [
+        "Comoros",
+        "Union of the Comoros"
+      ]
+    },
+    "KN": {
+      "name": "圣基茨和尼维斯",
+      "aliases": [
+        "Saint Kitts and Nevis"
+      ]
+    },
+    "KP": {
+      "name": "朝鲜",
+      "aliases": [
+        "Korea, Democratic People's Republic of",
+        "Democratic People's Republic of Korea",
+        "North Korea"
+      ]
+    },
+    "KR": {
+      "name": "韩国",
+      "aliases": [
+        "Korea, Republic of",
+        "South Korea"
+      ]
+    },
+    "KW": {
+      "name": "科威特",
+      "aliases": [
+        "Kuwait",
+        "State of Kuwait"
+      ]
+    },
+    "KY": {
+      "name": "开曼群岛",
+      "aliases": [
+        "Cayman Islands"
+      ]
+    },
+    "KZ": {
+      "name": "哈萨克斯坦",
+      "aliases": [
+        "Kazakhstan",
+        "Republic of Kazakhstan"
+      ]
+    },
+    "LA": {
+      "name": "老挝",
+      "aliases": [
+        "Lao People's Democratic Republic",
+        "Laos"
+      ]
+    },
+    "LB": {
+      "name": "黎巴嫩",
+      "aliases": [
+        "Lebanon",
+        "Lebanese Republic"
+      ]
+    },
+    "LC": {
+      "name": "圣卢西亚",
+      "aliases": [
+        "Saint Lucia"
+      ]
+    },
+    "LI": {
+      "name": "列支敦士登",
+      "aliases": [
+        "Liechtenstein",
+        "Principality of Liechtenstein"
+      ]
+    },
+    "LK": {
+      "name": "斯里兰卡",
+      "aliases": [
+        "Sri Lanka",
+        "Democratic Socialist Republic of Sri Lanka"
+      ]
+    },
+    "LR": {
+      "name": "利比里亚",
+      "aliases": [
+        "Liberia",
+        "Republic of Liberia"
+      ]
+    },
+    "LS": {
+      "name": "莱索托",
+      "aliases": [
+        "Lesotho",
+        "Kingdom of Lesotho"
+      ]
+    },
+    "LT": {
+      "name": "立陶宛",
+      "aliases": [
+        "Lithuania",
+        "Republic of Lithuania"
+      ]
+    },
+    "LU": {
+      "name": "卢森堡",
+      "aliases": [
+        "Luxembourg",
+        "Grand Duchy of Luxembourg"
+      ]
+    },
+    "LV": {
+      "name": "拉脱维亚",
+      "aliases": [
+        "Latvia",
+        "Republic of Latvia"
+      ]
+    },
+    "LY": {
+      "name": "利比亚",
+      "aliases": [
+        "Libya"
+      ]
+    },
+    "MA": {
+      "name": "摩洛哥",
+      "aliases": [
+        "Morocco",
+        "Kingdom of Morocco"
+      ]
+    },
+    "MC": {
+      "name": "摩纳哥",
+      "aliases": [
+        "Monaco",
+        "Principality of Monaco"
+      ]
+    },
+    "MD": {
+      "name": "摩尔多瓦",
+      "aliases": [
+        "Moldova, Republic of",
+        "Republic of Moldova",
+        "Moldova"
+      ]
+    },
+    "ME": {
+      "name": "黑山",
+      "aliases": [
+        "Montenegro"
+      ]
+    },
+    "MF": {
+      "name": "法属圣马丁",
+      "aliases": [
+        "Saint Martin (French part)"
+      ]
+    },
+    "MG": {
+      "name": "马达加斯加",
+      "aliases": [
+        "Madagascar",
+        "Republic of Madagascar"
+      ]
+    },
+    "MH": {
+      "name": "马绍尔群岛",
+      "aliases": [
+        "Marshall Islands",
+        "Republic of the Marshall Islands"
+      ]
+    },
+    "MK": {
+      "name": "北马其顿",
+      "aliases": [
+        "North Macedonia",
+        "Republic of North Macedonia"
+      ]
+    },
+    "ML": {
+      "name": "马里",
+      "aliases": [
+        "Mali",
+        "Republic of Mali"
+      ]
+    },
+    "MM": {
+      "name": "缅甸",
+      "aliases": [
+        "Myanmar",
+        "Republic of Myanmar"
+      ]
+    },
+    "MN": {
+      "name": "蒙古",
+      "aliases": [
+        "Mongolia"
+      ]
+    },
+    "MO": {
+      "name": "中国澳门",
+      "aliases": [
+        "Macao",
+        "Macao Special Administrative Region of China",
+        "Macau",
+        "澳门",
+        "澳門"
+      ]
+    },
+    "MP": {
+      "name": "北马里亚纳群岛",
+      "aliases": [
+        "Northern Mariana Islands",
+        "Commonwealth of the Northern Mariana Islands"
+      ]
+    },
+    "MQ": {
+      "name": "马提尼克",
+      "aliases": [
+        "Martinique"
+      ]
+    },
+    "MR": {
+      "name": "毛里塔尼亚",
+      "aliases": [
+        "Mauritania",
+        "Islamic Republic of Mauritania"
+      ]
+    },
+    "MS": {
+      "name": "蒙特塞拉特",
+      "aliases": [
+        "Montserrat"
+      ]
+    },
+    "MT": {
+      "name": "马耳他",
+      "aliases": [
+        "Malta",
+        "Republic of Malta"
+      ]
+    },
+    "MU": {
+      "name": "毛里求斯",
+      "aliases": [
+        "Mauritius",
+        "Republic of Mauritius"
+      ]
+    },
+    "MV": {
+      "name": "马尔代夫",
+      "aliases": [
+        "Maldives",
+        "Republic of Maldives"
+      ]
+    },
+    "MW": {
+      "name": "马拉维",
+      "aliases": [
+        "Malawi",
+        "Republic of Malawi"
+      ]
+    },
+    "MX": {
+      "name": "墨西哥",
+      "aliases": [
+        "Mexico",
+        "United Mexican States"
+      ]
+    },
+    "MY": {
+      "name": "马来西亚",
+      "aliases": [
+        "Malaysia"
+      ]
+    },
+    "MZ": {
+      "name": "莫桑比克",
+      "aliases": [
+        "Mozambique",
+        "Republic of Mozambique"
+      ]
+    },
+    "NA": {
+      "name": "纳米比亚",
+      "aliases": [
+        "Namibia",
+        "Republic of Namibia"
+      ]
+    },
+    "NC": {
+      "name": "新喀里多尼亚",
+      "aliases": [
+        "New Caledonia"
+      ]
+    },
+    "NE": {
+      "name": "尼日尔",
+      "aliases": [
+        "Niger",
+        "Republic of the Niger"
+      ]
+    },
+    "NF": {
+      "name": "诺福克岛",
+      "aliases": [
+        "Norfolk Island"
+      ]
+    },
+    "NG": {
+      "name": "尼日利亚",
+      "aliases": [
+        "Nigeria",
+        "Federal Republic of Nigeria"
+      ]
+    },
+    "NI": {
+      "name": "尼加拉瓜",
+      "aliases": [
+        "Nicaragua",
+        "Republic of Nicaragua"
+      ]
+    },
+    "NL": {
+      "name": "荷兰",
+      "aliases": [
+        "Netherlands",
+        "Kingdom of the Netherlands"
+      ]
+    },
+    "NO": {
+      "name": "挪威",
+      "aliases": [
+        "Norway",
+        "Kingdom of Norway"
+      ]
+    },
+    "NP": {
+      "name": "尼泊尔",
+      "aliases": [
+        "Nepal",
+        "Federal Democratic Republic of Nepal"
+      ]
+    },
+    "NR": {
+      "name": "瑙鲁",
+      "aliases": [
+        "Nauru",
+        "Republic of Nauru"
+      ]
+    },
+    "NU": {
+      "name": "纽埃",
+      "aliases": [
+        "Niue"
+      ]
+    },
+    "NZ": {
+      "name": "新西兰",
+      "aliases": [
+        "New Zealand"
+      ]
+    },
+    "OM": {
+      "name": "阿曼",
+      "aliases": [
+        "Oman",
+        "Sultanate of Oman"
+      ]
+    },
+    "PA": {
+      "name": "巴拿马",
+      "aliases": [
+        "Panama",
+        "Republic of Panama"
+      ]
+    },
+    "PE": {
+      "name": "秘鲁",
+      "aliases": [
+        "Peru",
+        "Republic of Peru"
+      ]
+    },
+    "PF": {
+      "name": "法属波利尼西亚",
+      "aliases": [
+        "French Polynesia"
+      ]
+    },
+    "PG": {
+      "name": "巴布亚新几内亚",
+      "aliases": [
+        "Papua New Guinea",
+        "Independent State of Papua New Guinea"
+      ]
+    },
+    "PH": {
+      "name": "菲律宾",
+      "aliases": [
+        "Philippines",
+        "Republic of the Philippines"
+      ]
+    },
+    "PK": {
+      "name": "巴基斯坦",
+      "aliases": [
+        "Pakistan",
+        "Islamic Republic of Pakistan"
+      ]
+    },
+    "PL": {
+      "name": "波兰",
+      "aliases": [
+        "Poland",
+        "Republic of Poland"
+      ]
+    },
+    "PM": {
+      "name": "圣皮埃尔和密克隆",
+      "aliases": [
+        "Saint Pierre and Miquelon"
+      ]
+    },
+    "PN": {
+      "name": "皮特凯恩群岛",
+      "aliases": [
+        "Pitcairn"
+      ]
+    },
+    "PR": {
+      "name": "波多黎各",
+      "aliases": [
+        "Puerto Rico"
+      ]
+    },
+    "PS": {
+      "name": "巴勒斯坦",
+      "aliases": [
+        "Palestine, State of",
+        "the State of Palestine",
+        "Palestine"
+      ]
+    },
+    "PT": {
+      "name": "葡萄牙",
+      "aliases": [
+        "Portugal",
+        "Portuguese Republic"
+      ]
+    },
+    "PW": {
+      "name": "帕劳",
+      "aliases": [
+        "Palau",
+        "Republic of Palau"
+      ]
+    },
+    "PY": {
+      "name": "巴拉圭",
+      "aliases": [
+        "Paraguay",
+        "Republic of Paraguay"
+      ]
+    },
+    "QA": {
+      "name": "卡塔尔",
+      "aliases": [
+        "Qatar",
+        "State of Qatar"
+      ]
+    },
+    "RE": {
+      "name": "留尼汪",
+      "aliases": [
+        "Réunion"
+      ]
+    },
+    "RO": {
+      "name": "罗马尼亚",
+      "aliases": [
+        "Romania"
+      ]
+    },
+    "RS": {
+      "name": "塞尔维亚",
+      "aliases": [
+        "Serbia",
+        "Republic of Serbia"
+      ]
+    },
+    "RU": {
+      "name": "俄罗斯",
+      "aliases": [
+        "Russian Federation",
+        "Russia"
+      ]
+    },
+    "RW": {
+      "name": "卢旺达",
+      "aliases": [
+        "Rwanda",
+        "Rwandese Republic"
+      ]
+    },
+    "SA": {
+      "name": "沙特阿拉伯",
+      "aliases": [
+        "Saudi Arabia",
+        "Kingdom of Saudi Arabia"
+      ]
+    },
+    "SB": {
+      "name": "所罗门群岛",
+      "aliases": [
+        "Solomon Islands"
+      ]
+    },
+    "SC": {
+      "name": "塞舌尔",
+      "aliases": [
+        "Seychelles",
+        "Republic of Seychelles"
+      ]
+    },
+    "SD": {
+      "name": "苏丹",
+      "aliases": [
+        "Sudan",
+        "Republic of the Sudan"
+      ]
+    },
+    "SE": {
+      "name": "瑞典",
+      "aliases": [
+        "Sweden",
+        "Kingdom of Sweden"
+      ]
+    },
+    "SG": {
+      "name": "新加坡",
+      "aliases": [
+        "Singapore",
+        "Republic of Singapore"
+      ]
+    },
+    "SH": {
+      "name": "圣赫勒拿、阿森松和特里斯坦-达库尼亚",
+      "aliases": [
+        "Saint Helena, Ascension and Tristan da Cunha"
+      ]
+    },
+    "SI": {
+      "name": "斯洛文尼亚",
+      "aliases": [
+        "Slovenia",
+        "Republic of Slovenia"
+      ]
+    },
+    "SJ": {
+      "name": "斯瓦尔巴和扬马延",
+      "aliases": [
+        "Svalbard and Jan Mayen"
+      ]
+    },
+    "SK": {
+      "name": "斯洛伐克",
+      "aliases": [
+        "Slovakia",
+        "Slovak Republic"
+      ]
+    },
+    "SL": {
+      "name": "塞拉利昂",
+      "aliases": [
+        "Sierra Leone",
+        "Republic of Sierra Leone"
+      ]
+    },
+    "SM": {
+      "name": "圣马力诺",
+      "aliases": [
+        "San Marino",
+        "Republic of San Marino"
+      ]
+    },
+    "SN": {
+      "name": "塞内加尔",
+      "aliases": [
+        "Senegal",
+        "Republic of Senegal"
+      ]
+    },
+    "SO": {
+      "name": "索马里",
+      "aliases": [
+        "Somalia",
+        "Federal Republic of Somalia"
+      ]
+    },
+    "SR": {
+      "name": "苏里南",
+      "aliases": [
+        "Suriname",
+        "Republic of Suriname"
+      ]
+    },
+    "SS": {
+      "name": "南苏丹",
+      "aliases": [
+        "South Sudan",
+        "Republic of South Sudan"
+      ]
+    },
+    "ST": {
+      "name": "圣多美和普林西比",
+      "aliases": [
+        "Sao Tome and Principe",
+        "Democratic Republic of Sao Tome and Principe"
+      ]
+    },
+    "SV": {
+      "name": "萨尔瓦多",
+      "aliases": [
+        "El Salvador",
+        "Republic of El Salvador"
+      ]
+    },
+    "SX": {
+      "name": "荷属圣马丁",
+      "aliases": [
+        "Sint Maarten (Dutch part)"
+      ]
+    },
+    "SY": {
+      "name": "叙利亚",
+      "aliases": [
+        "Syrian Arab Republic",
+        "Syria"
+      ]
+    },
+    "SZ": {
+      "name": "斯威士兰",
+      "aliases": [
+        "Eswatini",
+        "Kingdom of Eswatini",
+        "Swaziland"
+      ]
+    },
+    "TC": {
+      "name": "特克斯和凯科斯群岛",
+      "aliases": [
+        "Turks and Caicos Islands"
+      ]
+    },
+    "TD": {
+      "name": "乍得",
+      "aliases": [
+        "Chad",
+        "Republic of Chad"
+      ]
+    },
+    "TF": {
+      "name": "法属南部领地",
+      "aliases": [
+        "French Southern Territories"
+      ]
+    },
+    "TG": {
+      "name": "多哥",
+      "aliases": [
+        "Togo",
+        "Togolese Republic"
+      ]
+    },
+    "TH": {
+      "name": "泰国",
+      "aliases": [
+        "Thailand",
+        "Kingdom of Thailand"
+      ]
+    },
+    "TJ": {
+      "name": "塔吉克斯坦",
+      "aliases": [
+        "Tajikistan",
+        "Republic of Tajikistan"
+      ]
+    },
+    "TK": {
+      "name": "托克劳",
+      "aliases": [
+        "Tokelau"
+      ]
+    },
+    "TL": {
+      "name": "东帝汶",
+      "aliases": [
+        "Timor-Leste",
+        "Democratic Republic of Timor-Leste"
+      ]
+    },
+    "TM": {
+      "name": "土库曼斯坦",
+      "aliases": [
+        "Turkmenistan"
+      ]
+    },
+    "TN": {
+      "name": "突尼斯",
+      "aliases": [
+        "Tunisia",
+        "Republic of Tunisia"
+      ]
+    },
+    "TO": {
+      "name": "汤加",
+      "aliases": [
+        "Tonga",
+        "Kingdom of Tonga"
+      ]
+    },
+    "TR": {
+      "name": "土耳其",
+      "aliases": [
+        "Türkiye",
+        "Republic of Türkiye",
+        "Turkey"
+      ]
+    },
+    "TT": {
+      "name": "特立尼达和多巴哥",
+      "aliases": [
+        "Trinidad and Tobago",
+        "Republic of Trinidad and Tobago"
+      ]
+    },
+    "TV": {
+      "name": "图瓦卢",
+      "aliases": [
+        "Tuvalu"
+      ]
+    },
+    "TW": {
+      "name": "中国台湾",
+      "aliases": [
+        "Taiwan, Province of China",
+        "Taiwan",
+        "台湾",
+        "台灣"
+      ]
+    },
+    "TZ": {
+      "name": "坦桑尼亚",
+      "aliases": [
+        "Tanzania, United Republic of",
+        "United Republic of Tanzania",
+        "Tanzania"
+      ]
+    },
+    "UA": {
+      "name": "乌克兰",
+      "aliases": [
+        "Ukraine"
+      ]
+    },
+    "UG": {
+      "name": "乌干达",
+      "aliases": [
+        "Uganda",
+        "Republic of Uganda"
+      ]
+    },
+    "UM": {
+      "name": "美国本土外小岛屿",
+      "aliases": [
+        "United States Minor Outlying Islands"
+      ]
+    },
+    "US": {
+      "name": "美国",
+      "aliases": [
+        "United States",
+        "United States of America",
+        "USA",
+        "U.S.",
+        "US",
+        "U.S.A."
+      ]
+    },
+    "UY": {
+      "name": "乌拉圭",
+      "aliases": [
+        "Uruguay",
+        "Eastern Republic of Uruguay"
+      ]
+    },
+    "UZ": {
+      "name": "乌兹别克斯坦",
+      "aliases": [
+        "Uzbekistan",
+        "Republic of Uzbekistan"
+      ]
+    },
+    "VA": {
+      "name": "梵蒂冈",
+      "aliases": [
+        "Holy See (Vatican City State)",
+        "Vatican City"
+      ]
+    },
+    "VC": {
+      "name": "圣文森特和格林纳丁斯",
+      "aliases": [
+        "Saint Vincent and the Grenadines"
+      ]
+    },
+    "VE": {
+      "name": "委内瑞拉",
+      "aliases": [
+        "Venezuela, Bolivarian Republic of",
+        "Bolivarian Republic of Venezuela",
+        "Venezuela"
+      ]
+    },
+    "VG": {
+      "name": "英属维尔京群岛",
+      "aliases": [
+        "Virgin Islands, British",
+        "British Virgin Islands"
+      ]
+    },
+    "VI": {
+      "name": "美属维尔京群岛",
+      "aliases": [
+        "Virgin Islands, U.S.",
+        "Virgin Islands of the United States"
+      ]
+    },
+    "VN": {
+      "name": "越南",
+      "aliases": [
+        "Viet Nam",
+        "Socialist Republic of Viet Nam",
+        "Vietnam"
+      ]
+    },
+    "VU": {
+      "name": "瓦努阿图",
+      "aliases": [
+        "Vanuatu",
+        "Republic of Vanuatu"
+      ]
+    },
+    "WF": {
+      "name": "瓦利斯和富图纳",
+      "aliases": [
+        "Wallis and Futuna"
+      ]
+    },
+    "WS": {
+      "name": "萨摩亚",
+      "aliases": [
+        "Samoa",
+        "Independent State of Samoa"
+      ]
+    },
+    "YE": {
+      "name": "也门",
+      "aliases": [
+        "Yemen",
+        "Republic of Yemen"
+      ]
+    },
+    "YT": {
+      "name": "马约特",
+      "aliases": [
+        "Mayotte"
+      ]
+    },
+    "ZA": {
+      "name": "南非",
+      "aliases": [
+        "South Africa",
+        "Republic of South Africa"
+      ]
+    },
+    "ZM": {
+      "name": "赞比亚",
+      "aliases": [
+        "Zambia",
+        "Republic of Zambia"
+      ]
+    },
+    "ZW": {
+      "name": "津巴布韦",
+      "aliases": [
+        "Zimbabwe",
+        "Republic of Zimbabwe"
+      ]
+    }
+  },
+  "us_states": {
+    "AL": [
+      "Alabama"
+    ],
+    "AK": [
+      "Alaska"
+    ],
+    "AZ": [
+      "Arizona"
+    ],
+    "AR": [
+      "Arkansas"
+    ],
+    "CA": [
+      "California",
+      "Calif.",
+      "Calif",
+      "Cal."
+    ],
+    "CO": [
+      "Colorado"
+    ],
+    "CT": [
+      "Connecticut"
+    ],
+    "DE": [
+      "Delaware"
+    ],
+    "FL": [
+      "Florida"
+    ],
+    "GA": [
+      "Georgia"
+    ],
+    "HI": [
+      "Hawaii"
+    ],
+    "ID": [
+      "Idaho"
+    ],
+    "IL": [
+      "Illinois"
+    ],
+    "IN": [
+      "Indiana"
+    ],
+    "IA": [
+      "Iowa"
+    ],
+    "KS": [
+      "Kansas"
+    ],
+    "KY": [
+      "Kentucky"
+    ],
+    "LA": [
+      "Louisiana"
+    ],
+    "ME": [
+      "Maine"
+    ],
+    "MD": [
+      "Maryland"
+    ],
+    "MA": [
+      "Massachusetts"
+    ],
+    "MI": [
+      "Michigan"
+    ],
+    "MN": [
+      "Minnesota"
+    ],
+    "MS": [
+      "Mississippi"
+    ],
+    "MO": [
+      "Missouri"
+    ],
+    "MT": [
+      "Montana"
+    ],
+    "NE": [
+      "Nebraska"
+    ],
+    "NV": [
+      "Nevada"
+    ],
+    "NH": [
+      "New Hampshire"
+    ],
+    "NJ": [
+      "New Jersey"
+    ],
+    "NM": [
+      "New Mexico"
+    ],
+    "NY": [
+      "New York"
+    ],
+    "NC": [
+      "North Carolina"
+    ],
+    "ND": [
+      "North Dakota"
+    ],
+    "OH": [
+      "Ohio"
+    ],
+    "OK": [
+      "Oklahoma"
+    ],
+    "OR": [
+      "Oregon"
+    ],
+    "PA": [
+      "Pennsylvania"
+    ],
+    "RI": [
+      "Rhode Island"
+    ],
+    "SC": [
+      "South Carolina"
+    ],
+    "SD": [
+      "South Dakota"
+    ],
+    "TN": [
+      "Tennessee"
+    ],
+    "TX": [
+      "Texas"
+    ],
+    "UT": [
+      "Utah"
+    ],
+    "VT": [
+      "Vermont"
+    ],
+    "VA": [
+      "Virginia"
+    ],
+    "WA": [
+      "Washington"
+    ],
+    "WV": [
+      "West Virginia"
+    ],
+    "WI": [
+      "Wisconsin"
+    ],
+    "WY": [
+      "Wyoming"
+    ],
+    "DC": [
+      "District of Columbia"
+    ]
+  },
+  "us_city_states": {
+    "san francisco": "CA",
+    "palo alto": "CA",
+    "mountain view": "CA",
+    "menlo park": "CA",
+    "san mateo": "CA",
+    "redwood city": "CA",
+    "sunnyvale": "CA",
+    "san jose": "CA",
+    "santa clara": "CA",
+    "san diego": "CA",
+    "los angeles": "CA",
+    "santa monica": "CA",
+    "berkeley": "CA",
+    "oakland": "CA",
+    "sacramento": "CA",
+    "irvine": "CA",
+    "pasadena": "CA",
+    "new york": "NY",
+    "brooklyn": "NY",
+    "manhattan": "NY",
+    "boston": "MA",
+    "cambridge": "MA",
+    "somerville": "MA",
+    "seattle": "WA",
+    "bellevue": "WA",
+    "redmond": "WA",
+    "austin": "TX",
+    "dallas": "TX",
+    "houston": "TX",
+    "san antonio": "TX",
+    "miami": "FL",
+    "orlando": "FL",
+    "tampa": "FL",
+    "chicago": "IL",
+    "denver": "CO",
+    "boulder": "CO",
+    "atlanta": "GA",
+    "minneapolis": "MN",
+    "philadelphia": "PA",
+    "pittsburgh": "PA",
+    "salt lake city": "UT",
+    "provo": "UT",
+    "raleigh": "NC",
+    "durham": "NC",
+    "charlotte": "NC",
+    "portland": "OR",
+    "detroit": "MI",
+    "columbus": "OH",
+    "cincinnati": "OH",
+    "cleveland": "OH",
+    "indianapolis": "IN",
+    "nashville": "TN",
+    "st. louis": "MO",
+    "kansas city": "MO",
+    "madison": "WI",
+    "milwaukee": "WI",
+    "las vegas": "NV",
+    "phoenix": "AZ",
+    "tempe": "AZ",
+    "wilmington": "DE",
+    "newark": "NJ",
+    "hoboken": "NJ",
+    "jersey city": "NJ",
+    "baltimore": "MD",
+    "st. paul": "MN"
+  },
+  "city_aliases": {
+    "nyc": "new york",
+    "new york city": "new york",
+    "纽约": "new york",
+    "旧金山": "san francisco"
+  }
+}

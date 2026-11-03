@@ -1,0 +1,18 @@
+# 复制为 /srv/vc-radar/state/config.toml 后修改。不放密钥：DEEPSEEK_API_KEY 从环境变量或 /srv/vc-radar/.env 读。
+state_dir = "/srv/vc-radar/state"
+env_file = "/srv/vc-radar/.env"
+base_url = ""                    # 空串不带回看链接；回看页上线后填真实基址，--no-links 可临时禁用。
+# 第二期起可设 base_url = "https://radar.example.com/vc-radar/<令牌>"；link_path_template 留空 = 始终指向最新一期，设 "{date}" = 指向当期快照（需发布脚本同时保留日期目录）。
+link_path_template = ""
+push_mode = "weekly"            # weekly | daily
+push_weekday = 4                # 推送日 = 周一～周五里最后一个中国工作日（PRD 4.1）
+holiday_shift = "prev_workday"  # PRD V15c 定：周五放假提前
+trigger_time = "08:40"          # 例程触发时间（北京）
+run_deadline = "08:50"          # 脚本总超时时点（到点没跑完写「没跑完」文件）
+file_deadline = "08:55"         # outbox 最晚写好
+pickup_time = "08:58"           # 取件程序x取件
+push_time = "09:00"
+total_timeout_s = 600
+per_url_timeout_s = 30
+extract_concurrency = 4
+model = "deepseek-flash"

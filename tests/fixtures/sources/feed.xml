@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+  <channel>
+    <title>Synthetic funding feed</title>
+    <item><guid>synthetic-terse</guid><link>https://example.invalid/terse</link>
+      <title>Terse Raises $8M to Build Shared Rooms</title>
+      <pubDate>Thu, 29 Oct 2026 21:30:00 +0000</pubDate>
+      <description><![CDATA[<p>Terse builds <b>shared rooms</b> for small teams.</p>]]></description>
+      <content:encoded><![CDATA[<p>Terse, a New York-based startup, raised $8 million in seed funding.</p><p>Example Ventures led the round.</p>]]></content:encoded>
+    </item>
+    <item><link>https://example.invalid/dream</link><title>Dream Raises $12M</title>
+      <pubDate>Wed, 28 Oct 2026 20:00:00 GMT</pubDate>
+      <description><![CDATA[<p>Dream tests a fictional collaboration tool.</p>]]></description>
+    </item>
+  </channel>
+</rss>

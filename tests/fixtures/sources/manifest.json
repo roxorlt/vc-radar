@@ -1,0 +1,21 @@
+{
+  "https://techcrunch.com/robots.txt": {"status":404},
+  "https://news.crunchbase.com/robots.txt": {"status":404},
+  "https://www.alleywatch.com/robots.txt": {"status":404},
+  "https://www.ycombinator.com/robots.txt": {"body":"User-agent: *\nDisallow: /companies?*\n"},
+  "https://hn.algolia.com/robots.txt": {"status":404},
+  "https://newsletter.strictlyvc.com/robots.txt": {"status":404},
+  "https://synthetic-dsn.algolia.net/robots.txt": {"status":404},
+  "https://techcrunch.com/category/venture/feed/": {"file":"feed.xml","content_type":"application/rss+xml"},
+  "https://techcrunch.com/category/startups/feed/": {"file":"feed.xml","content_type":"application/rss+xml"},
+  "https://news.crunchbase.com/": {"file":"feed.xml","content_type":"application/rss+xml"},
+  "https://www.alleywatch.com/category/funding/feed/": {"file":"alleywatch.xml","content_type":"application/rss+xml"},
+  "https://www.ycombinator.com/launches": {"file":"launches.json","content_type":"application/json"},
+  "https://www.ycombinator.com/companies": {"file":"directory.html","content_type":"text/html"},
+  "https://synthetic-dsn.algolia.net/1/indexes/*/queries": {"content_type":"application/json","sequence":[{"file":"facets.json"},{"file":"directory.json"},{"file":"directory-summer.json"},{"file":"directory-spring.json"},{"file":"directory-winter.json"}]},
+  "https://hn.algolia.com/api/v1/search_by_date": {"file":"hn.json","content_type":"application/json"},
+  "https://newsletter.strictlyvc.com/sitemap.xml": {"file":"strictlyvc-sitemap.xml","content_type":"application/xml"},
+  "https://newsletter.strictlyvc.com/p/synthetic-issue": {"file":"strictlyvc.html","content_type":"text/html"},
+  "https://content.fortune.com/wp-json/wp/v2/posts?newsletter=7249411": {"file":"termsheet-list.json","content_type":"application/json"},
+  "https://content.fortune.com/newsletter/termsheet/?post_id=701": {"file":"termsheet.html","content_type":"text/html"}
+}

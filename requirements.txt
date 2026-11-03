@@ -1,0 +1,6 @@
+# runtime: Python 3.13 standard library only (no third-party runtime deps)
+# tests:
+pytest==8.3.3
+iniconfig==2.3.1
+packaging==26.3
+pluggy==1.7.0

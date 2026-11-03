@@ -1,0 +1,30 @@
+# secrets
+.env
+*.env
+.env.*
+!config/*.example
+# runtime data lives outside the repo (/srv/vc-radar/state)
+state/
+*.db
+*.db-wal
+*.db-shm
+raw/
+outbox/
+outbox-test/
+test-site/
+test-cache/
+*.out
+*.html.cache
+# python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# 不进库：数据库、导出和备份
+*.sqlite
+*.sqlite3
+*.dump
+*.sql
+*.bak*
+*.log

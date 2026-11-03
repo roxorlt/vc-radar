@@ -1,0 +1,9 @@
+{
+  "source_id": "synthetic_news",
+  "external_id": "aster-series-a",
+  "url": "https://news.example.invalid/aster",
+  "title": "Aster raises $34M in Series A funding",
+  "excerpt": "Aster, a San Francisco-based software company, raised $34M in Series A funding led by Cedar Capital and Maple Ventures.",
+  "body": "Aster builds AI tools for community organizers. The software helps local groups plan activities and coordinate volunteers. Aster, a San Francisco-based software company, raised $34M in Series A funding led by Cedar Capital and Maple Ventures. The founders started the company in 2024.",
+  "structured": {}
+}

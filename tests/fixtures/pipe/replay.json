@@ -1,0 +1,39 @@
+{
+  "date": "2026-10-30",
+  "items": [
+    {
+      "source_id": "tc_venture",
+      "external_id": "handwritten-aster-tc",
+      "url": "https://synthetic.example/aster-tc",
+      "title": "Aster raises $12M in Series A funding",
+      "published_at": "2026-10-29T20:00:00Z",
+      "excerpt": "Aster is a Boston-based company. Aster builds AI software for community organizers.",
+      "fixed_extraction": {
+        "summary": "Aster 为社区组织者开发人工智能软件。产品支持活动规划和协作。公司完成 Series A 融资 $12M。",
+        "ai": {"verdict": "是", "quote": "Aster builds AI software for community organizers."},
+        "social": {"verdict": "是", "quote": "Aster builds AI software for community organizers."}
+      }
+    },
+    {
+      "source_id": "cbn_main",
+      "external_id": "handwritten-aster-cbn",
+      "url": "https://synthetic.example/aster-cbn",
+      "title": "Aster raises $16M in Series A funding",
+      "published_at": "2026-10-29T21:00:00Z",
+      "excerpt": "Aster is a Boston-based company. Aster builds AI software for community organizers.",
+      "fixed_extraction": {
+        "ai": {"verdict": "是", "quote": "Aster builds AI software for community organizers."},
+        "social": {"verdict": "拿不准", "quote": ""}
+      }
+    },
+    {
+      "source_id": "tc_venture",
+      "external_id": "handwritten-composal",
+      "url": "https://synthetic.example/composal",
+      "title": "Composal raises $5M in seed funding",
+      "published_at": "2026-10-29T22:00:00Z",
+      "excerpt": "Composal is a London-based company.",
+      "fixed_extraction": {}
+    }
+  ]
+}

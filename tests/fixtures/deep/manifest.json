@@ -1,0 +1,12 @@
+{
+  "https://": {"status": 404, "body": ""},
+  "https://api.deepseek.com/v1/tools/search": {"content_type": "application/json", "body": "{\"results\":[{\"title\":\"Handwritten funding note\",\"url\":\"https://search.example/cedar\",\"snippet\":\"Synthetic search result\"}]}"},
+  "https://cedar.example/": {"file": "home.html", "content_type": "text/html"},
+  "https://cedar.example/robots.txt": {"status": 404, "body": ""},
+  "https://cedar.example/about": {"body": "<main>Mira Example is a founder of Cedar Labs.</main>", "content_type": "text/html"},
+  "https://cedar.example/news/seed": {"body": "<article>Cedar Labs raised $3 million in a Seed round led by Maple Ventures.</article>", "content_type": "text/html"},
+  "https://maple.example/blog/cedar": {"body": "<article>Maple Ventures joined the Cedar Labs Seed round.</article>", "content_type": "text/html"},
+  "https://github.com/cedar-example/actors": {"body": "<main>Cedar Actors README. License: MIT. Stars: 12.</main>", "content_type": "text/html"},
+  "https://hn.algolia.com/api/v1/items/123456": {"content_type": "application/json", "body": "{\"id\":123456,\"title\":\"Show HN: Cedar Actors\",\"text\":\"A synthetic announcement.\",\"children\":[{\"author\":\"tester\",\"text\":\"<p>A handwritten question about durability.</p>\",\"children\":[]}] }"},
+  "https://search.example/cedar": {"body": "<article>A synthetic independent funding report about Cedar Labs.</article>", "content_type": "text/html"}
+}
