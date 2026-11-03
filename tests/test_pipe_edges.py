@@ -1,6 +1,7 @@
 """交接窗口、并发、计费和正文补抓的离线边界测试。"""
 from datetime import date, datetime, time as daytime, timedelta
 import json
+import re
 from pathlib import Path
 from threading import Lock
 import time
@@ -69,7 +70,7 @@ def test_first_sent_file_and_resend_keep_main_window(tmp_path, monkeypatch):
     write_fixture(fixture, "2026-10-30", new=["Birch", "Citrine"])
     production_run(cfg, "2026-10-30", resend=True)
     resend = json.loads((cfg.outbox_dir / "2026-10-30-resend-1.json").read_text())
-    assert "重发" in resend["text"].splitlines()[2].split(" · ") and "1. Birch" in resend["text"] and "Citrine" not in resend["text"]
+    assert "重发" not in resend["text"] and "1. Birch" in resend["text"] and "Citrine" not in resend["text"]
     digest = next(row for row in rows(cfg, "digest") if row["date"] == "2026-10-30")
     assert digest["generated_at"] == original["generated_at"] and digest["window_start"] == original["window_start"]
     assert digest["text"] == original["text"] and digest["resend_count"] == 1
@@ -239,7 +240,7 @@ def test_unexpected_fetch_failure_still_writes_alarm_file(tmp_path, monkeypatch)
     monkeypatch.setattr(pipeline.fetcher, "fetch_all", fail)
     assert pipeline.run(cfg, arguments(fixture), pipeline.Clock(date(2026, 10, 30), daytime(8, 40))) == 1
     payload = json.loads(next(cfg.outbox_dir.glob("*.json")).read_text())
-    assert payload["alarm"] is True and payload["push"] is True and "今天所有来源都没抓到" in payload["text"]
+    assert payload["alarm"] is True and payload["push"] is True and "所有来源都没抓到：" in payload["text"]
 
 
 def test_clock_date_and_time_simulation_keep_real_elapsed_seconds(monkeypatch):
@@ -289,7 +290,7 @@ def test_zero_baseline_omits_notice_but_keeps_repeat_coverage_hint(tmp_path):
     first, _ = run_at(cfg, fixture, "2026-10-30", first_issue=True)
     second, _ = run_at(cfg, fixture, "2026-10-30", resend=True)
     assert "首次运行收录 0 家以前的公司，不算新增" not in first["text"] and "首次运行收录 0 家以前的公司，不算新增" not in second["text"]
-    assert "本周一到 10-29 日的内容没抓全" in second["text"]
+    assert "没抓全" not in second["text"] and second["text"].splitlines()[1].startswith("1. ")
 
 
 def test_model_timeout_handoff_does_not_leave_background_file_writes_and_can_retry(tmp_path, monkeypatch):
@@ -303,7 +304,7 @@ def test_model_timeout_handoff_does_not_leave_background_file_writes_and_can_ret
     mock = llm.MockLLMClient([{"delay_s": .2}] * 4)
     monkeypatch.setattr(pipeline, "model_client", lambda *args: mock)
     result, _ = run_at(cfg, fixture, "2026-10-30", total_timeout=.05)
-    assert result["alarm"] is True and "今天没抓完" in result["text"]
+    assert result["alarm"] is True and "部分来源没抓到：今天没能按时抓完" in result["text"]
     log = cfg.log_dir / "2026-10-30.log"
     before = log.read_bytes()
     time.sleep(.08)
@@ -341,7 +342,7 @@ def test_replay_twelve_ties_use_fixed_ingestion_time_and_case_insensitive_names(
     text = json.loads(next(cfg.outbox_dir.glob("*.json")).read_text())["text"]
     actual = [line.split(". ", 1)[1].split("｜")[0] for line in text.splitlines() if line[:1].isdigit() and ". " in line]
     assert actual == sorted(names, key=str.casefold)[:10]
-    assert "本周共 12 家" in text
+    assert "本周共" not in text and len([line for line in text.splitlines() if re.match(r"\d+\. ", line)]) == 10
 
 
 def test_v15f_nondisputed_amount_uses_highest_credibility(tmp_path):
@@ -367,7 +368,7 @@ def test_same_company_multiple_rounds_in_one_issue_selects_latest_round_once(tmp
     cfg = Config(state_dir=tmp_path / "state", test_mode=True)
     assert run_replay(cfg, arguments(replay=path), pipeline.Clock(date(2026, 10, 30), daytime(8, 40))) == 0
     text = json.loads(next(cfg.outbox_dir.glob("*.json")).read_text())["text"]
-    assert "本周共 2 家" in text and text.count("1. Aster") == 1
+    assert "本周共" not in text and text.count("1. Aster") == 1
     assert text.count("2. Composal") == 1
     assert "Aster【新一轮】" in text and "A 轮 · 1600 万美元" in text
 

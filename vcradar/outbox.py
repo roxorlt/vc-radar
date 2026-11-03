@@ -5,7 +5,7 @@ import json
 import os
 import re
 import tempfile
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from .config import BJ
@@ -70,13 +70,42 @@ def _has_first_issue(outbox_dir: Path, d: date, test: bool) -> bool:
                and json.loads(path.read_text(encoding="utf-8")).get("push") is True for path in paths)
 
 
+def test_sent_file(outbox_dir: Path, d: date) -> Path | None:
+    """找出同日已有同主名回执的测试交接文件，包含首期和重发。"""
+    pattern = re.compile(re.escape(str(d)) + r"-(?:\d{6}(?:-first)?|(?:first-)?resend-[1-9]\d*(?:-\d{6})?)\.json")
+    paths = [path for path in Path(outbox_dir).glob(f"{d}-*.json")
+             if pattern.fullmatch(path.name) and path.is_file() and path.with_suffix(".sent").is_file()]
+    return max(paths, key=lambda path: path.name, default=None)
+
+
+def _new_test_main_path(outbox_dir: Path, d: date, real_now: datetime) -> Path:
+    clock = _beijing(real_now)
+    pattern = re.compile(re.escape(str(d)) + r"-(\d{6})\.json")
+    for path in Path(outbox_dir).glob(f"{d}-*.json"):
+        match = pattern.fullmatch(path.name)
+        if match and path.is_file():
+            try:
+                stamp = datetime.strptime(match[1], "%H%M%S")
+            except ValueError:
+                continue
+            # 同秒重跑或测试钟点回退时，仍给新文件一个更大的、不覆盖的钟点。
+            seen = clock.replace(hour=stamp.hour, minute=stamp.minute, second=stamp.second, microsecond=0)
+            if seen >= clock.replace(microsecond=0):
+                following = seen + timedelta(seconds=1)
+                if following.date() != clock.date():
+                    raise FileExistsError("当天测试交接文件的 HHMMSS 已用尽")
+                clock = following
+    return Path(outbox_dir) / f"{d}-{clock:%H%M%S}.json"
+
+
 def write_main(outbox_dir: Path, d: date, *, push: bool, alarm: bool, generated_at: datetime, text: str,
                test: bool, real_now: datetime) -> Path:
     """正式：outbox/<日期>.json；当天 .sent 已存在时不覆盖，返回已有路径并不写（防重复推送）。
-    测试：outbox-test/<d>-<HHMMSS>.json；当天已有首期文件时，定时文件强制 push=false。"""
+    测试：任一同日交接文件已有回执就不写；否则新建不同 HHMMSS 的文件。"""
     if test:
-        clock = _beijing(real_now)
-        path = Path(outbox_dir) / f"{d.isoformat()}-{clock:%H%M%S}.json"
+        if sent := test_sent_file(outbox_dir, d):
+            return sent
+        path = _new_test_main_path(outbox_dir, d, real_now)
     else:
         path = main_path(outbox_dir, d)
         if path.with_suffix(".sent").exists():

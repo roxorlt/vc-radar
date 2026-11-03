@@ -29,7 +29,7 @@ def test_no_links_only_removes_navigation_and_unlinks_evidence(digest, tmp_path,
     options = dict(early_push=True, failed_days=1, since_last_push=since_last_push)
     linked = render.render_push(digest, links_file=links, **options)
     text = render.render_push(replace(digest, base_url=""), links_file=links, **options)
-    footer = f"[看本周全部 {len(digest.cards)} 家]({BASE}/#week)｜[来源网站状态]({BASE}/#sources)"
+    footer = f"[看本周全部]({BASE}/#week)"
     evidence = f"{'上次推送后' if since_last_push else '本周'} 3 家资料有出入"
     expected = "\n".join(line for line in linked.splitlines() if line != footer)
     expected = expected.replace(f"[{evidence}]({BASE}/#sources)", evidence)
@@ -41,7 +41,7 @@ def test_no_links_only_removes_navigation_and_unlinks_evidence(digest, tmp_path,
     else:
         assert "](" not in text
     assert "\n\n" not in text and not text.endswith("\n")
-    assert evidence in text and "YC 新一批 36 家" in text
+    assert evidence not in text and "YC 新一批 36 家" in text
     assert "名单见网页" not in text and "在往期页看" not in text
     assert render.remove_page_links(linked) == text
     assert digest.base_url == BASE
@@ -51,10 +51,10 @@ def test_no_new_without_hints_keeps_status_and_last_summary(digest):
     digest.last_push_summary = (date(2026, 10, 23), 2)
     text = render.render_push(replace(digest, base_url=""))
     lines = text.splitlines()
-    assert len(lines) == 4 and lines[2].startswith("已接入 8 个来源网站，全部正常")
-    assert lines[-1] == "上一次有新公司是 10-23 那期，2 家"
+    assert len(lines) == 2 and lines[-1] == "本周没有发现新的天使轮、种子轮、A 轮融资。"
+    assert "已接入" not in text and "上一次有新公司" not in text
     assert render.push_first_lines(text) == (lines[1], "")
-    assert render.add_resend_notice(text).splitlines()[2] == "重发"
+    assert render.add_resend_notice(text) == text
 
 
 def test_card_without_base_url_omits_details_and_preserves_source_links():
@@ -71,9 +71,7 @@ def test_nonempty_base_url_keeps_navigation_evidence_and_details(digest):
     digest.cards = [card()]
     digest.new_evidence_count = 2
     text = render.render_push(digest)
-    assert text.splitlines()[2] == "[本周 2 家资料有出入](https://review.example/radar/#sources)"
-    assert text.splitlines()[-1] == (
-        "[看本周全部 1 家](https://review.example/radar/#week)｜"
-        "[来源网站状态](https://review.example/radar/#sources)")
+    assert "资料有出入" not in text and "#sources" not in text
+    assert text.splitlines()[-1] == "[看本周全部](https://review.example/radar/#week)"
     assert render.render_card(digest.cards[0], digest.base_url).endswith(
         "　[详情](https://review.example/radar/#c/aster)")

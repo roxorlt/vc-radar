@@ -1,6 +1,8 @@
 """P0 共 8 个信源、11 个地址（PRD 第 3 节）。任务 A 实现。"""
 from __future__ import annotations
 
+from urllib.parse import urlsplit
+
 from ..models import SourceDef
 
 P0_SOURCES: list[SourceDef] = [
@@ -16,6 +18,44 @@ P0_SOURCES: list[SourceDef] = [
     SourceDef("strictlyvc", "StrictlyVC", "newsletter", "https://newsletter.strictlyvc.com/sitemap.xml", "page", 2, 9),
     SourceDef("alleywatch", "AlleyWatch", "funding", "https://www.alleywatch.com/category/funding/feed/", "rss", 2, 10),
 ]
+
+# 展示顺序不使用抓取优先级；Term Sheet 仍然最先抓、最后显示。
+DISPLAY_ORDER = ("TechCrunch", "Crunchbase News", "YC Launches", "YC 公司目录",
+                 "Launch HN", "StrictlyVC", "AlleyWatch", "Term Sheet")
+_DISPLAY_NAMES = {source.id: source.name for source in P0_SOURCES}
+_DISPLAY_RANKS = {source_id: DISPLAY_ORDER.index(name) for source_id, name in _DISPLAY_NAMES.items()}
+
+
+def display_rank(source_id: str) -> int:
+    """返回条目所属信源的展示序号；未知信源排在最后。"""
+    return _DISPLAY_RANKS.get(source_id, len(DISPLAY_ORDER))
+
+
+def _host(url: str) -> str:
+    host = (urlsplit(url).hostname or "").lower()
+    return host[4:] if host.startswith("www.") else host
+
+
+_URL_NAMES = sorted(((_host(s.url), urlsplit(s.url).path.rstrip("/"), s.name) for s in P0_SOURCES),
+                    key=lambda item: -len(item[1]))
+
+
+def name_for_url(url: str) -> str | None:
+    """按信源表地址认出页面所属信源：先按站点加路径前缀，再按只属于一个信源的站点；认不出返回 None。"""
+    try:
+        host, path = _host(url), urlsplit(url).path
+    except ValueError:
+        return None
+    for source_host, prefix, name in _URL_NAMES:
+        if prefix and host == source_host and (path == prefix or path.startswith(prefix + "/")):
+            return name
+    names = {name for source_host, _, name in _URL_NAMES if source_host == host}
+    return names.pop() if len(names) == 1 else None
+
+
+def display_name(source_id: str) -> str:
+    """返回信源名，未知信源保留其编号。"""
+    return _DISPLAY_NAMES.get(source_id, source_id)
 
 
 def sources_by_name() -> dict[str, list[SourceDef]]:

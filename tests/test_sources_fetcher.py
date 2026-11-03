@@ -259,7 +259,7 @@ def test_backfill_three_page_limit_has_honest_missing_time_upper_bound(tmp_path)
     assert outcome.ok and len(outcome.items) == 3
     assert outcome.runs[0].pages == 3 and outcome.runs[0].is_backfill
     assert "2026-10-28 04:00" in outcome.missed_range and "北京时间" in outcome.missed_range
-    assert "状态未提供" in outcome.missed_range
+    assert outcome.missed_range == "时间未知 ~ 2026-10-28 04:00（北京时间）"
     assert outcome.runs[0].missed_range == outcome.missed_range
     assert not any("paged=4" in entry["url"] for entry in client.request_log)
 

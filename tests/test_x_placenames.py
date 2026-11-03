@@ -284,7 +284,8 @@ def test_42_6_history_site_and_push_share_text_and_leave_source_quotes(tmp_path)
     assert company["deepdive"]["items"][3]["points"][0]["evidence"][0]["quote"] == quote
     assert company["deepdive"]["new_evidence"][0]["field"] == "国家"
     snapshot = json.loads((path / "data.json").read_text())
-    assert snapshot["status"]["new_evidence"][0]["fields"] == ["国家"]
+    assert site._snapshot(conn, cfg, NOW)["status"]["new_evidence"][0]["fields"] == ["国家"]
+    assert "status" not in snapshot
     assert conn.execute("SELECT summary FROM company").fetchone()[0] == before
     assert conn.execute("SELECT result_json FROM deepdive").fetchone()[0] == json.dumps(result)
     assert {"总部位于", "总部在", "总部设在"} <= wording.BANNED_OLD_WORDS
@@ -388,7 +389,7 @@ def test_42_8_fix_transaction_rolls_back_all_fields(tmp_path):
     assert not (cfg.db_path.parent / "data" / "fix-place-names.log").exists()
 
 
-@pytest.mark.parametrize("flags", [[], ["--date", "2026-10-30"], ["--to", "test"], ["--no-verify"],
+@pytest.mark.parametrize("flags", [[], ["--date", "2026-10-30"], ["--to", "test"], ["--test"], ["--no-verify"],
     ["--fixture", "unread-fixture"], ["--replay", "unread-replay.json"], ["--reset-test-db"],
     ["--dry-run"], ["--rates-fail"], ["--prod-rules"], ["--now", "08:40"],
     ["--rates-file", "unread-rates.json"], ["--links-file", "unread-links.json"],

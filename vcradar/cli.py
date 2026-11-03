@@ -51,6 +51,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--date", type=_date)
     parser.add_argument("--now", type=_time)
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--test", action="store_true", help="使用测试库和 outbox-test，等价于 --to test")
     parser.add_argument("--fixture", type=Path)
     parser.add_argument("--to", choices=["test"])
     parser.add_argument("--resend", action="store_true")

@@ -322,8 +322,9 @@ def test_site_week_history_conflicts_and_status_use_frozen_amounts(tmp_path, mon
         path = site.build_site(conn, cfg, now=NOW)
         data = json.loads((path / "data.json").read_text())
         by_id = {e["id"]: e for e in data["events"]}
-        assert data["status"]["fx"]["ok"] is False
-        assert data["status"]["fx"]["date"] == "2026-10-30"
+        assert site._snapshot(conn, cfg, NOW)["status"]["fx"]["ok"] is False
+        assert site._snapshot(conn, cfg, NOW)["status"]["fx"]["date"] == "2026-10-30"
+        assert "status" not in data
         assert by_id[euro]["amount"] == "TechCrunch 写 约 1200 万美元（原 €1000 万，按 10-30 汇率），Crunchbase News 写 2000 万美元"
         assert by_id[gbp]["amount"] == "约 1200 万美元（原 £800 万，按 10-30 汇率）"
         assert "融资 约 1200 万美元（原 €1000 万，按 10-30 汇率）" in by_id[euro]["summary"]
@@ -333,7 +334,7 @@ def test_site_week_history_conflicts_and_status_use_frozen_amounts(tmp_path, mon
         assert detail["companies"][0]["conflicts"][0]["values"][0]["value"] == "约 1200 万美元（原 €1000 万，按 10-30 汇率）"
         positions = {eid: index for index, eid in enumerate(data["listing"])}
         assert positions[gbp] < positions[euro]
-        assert "status.fx.message" in (path / "app.js").read_text()
+        assert "status.fx.message" not in (path / "app.js").read_text()
 
 
 @pytest.mark.parametrize("cache_available", [False, True])

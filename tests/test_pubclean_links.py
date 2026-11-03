@@ -75,9 +75,9 @@ def test_template_applies_to_week_sources_evidence_and_details(template, expecte
     digest = DigestData(DAY, None, datetime(2026, 11, 1, tzinfo=BJ), "有新增",
                         cards=[card()], new_evidence_count=2, base_url=base, review_site_passed=True)
     text = render.render_push(digest)
-    assert f"[本周 2 家资料有出入]({expected}/#sources)" in text
-    assert f"[看本周全部 1 家]({expected}/#week)" in text
-    assert f"[来源网站状态]({expected}/#sources)" in text
+    assert "资料有出入" not in text
+    assert f"[看本周全部]({expected}/#week)" in text
+    assert "#sources" not in text
     assert f"[详情]({expected}/#c/aster)" in render.render_card(digest.cards[0], base)
     assert "2026-11-01" not in text
 
@@ -88,7 +88,7 @@ def test_empty_base_keeps_navigation_disabled_with_date_template():
                         new_evidence_count=2, base_url=base, review_site_passed=True)
     text = render.render_push(digest)
     assert base == "" and "](" not in text
-    assert "本周 2 家资料有出入" in text
+    assert "本周 2 家资料有出入" not in text
     assert "[详情]" not in render.render_card(card(), base)
 
 
@@ -110,7 +110,7 @@ def test_first_issue_and_resend_use_template_or_no_links(tmp_path, monkeypatch, 
             assert "/#" not in text and "看本周全部" not in text
         else:
             expected = BASE + ("/2026-10-30" if template else "")
-            assert f"[来源网站状态]({expected}/#sources)" in text
+            assert "#sources" not in text
             assert f"]({expected}/#week)" in text
     assert cfg.base_url == base_url and cfg.link_path_template == template
 
@@ -138,5 +138,6 @@ def test_failure_handoff_uses_the_same_template(tmp_path):
         conn.close()
     handoff, = cfg.outbox_dir.glob("*.json")
     text = json.loads(handoff.read_text())["text"]
-    assert f"]({BASE}/2026-10-30/#week)" in text
-    assert f"]({BASE}/2026-10-30/#sources)" in text
+    assert text.splitlines()[-1] == "[看本周全部](https://review.example/radar/2026-10-30/#week)"
+    assert "#sources" not in text
+    assert text.splitlines()[1] == "所有来源都没抓到：今天每个网站都出了问题。本周汇总可能不全，不代表没有新公司。"

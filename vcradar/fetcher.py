@@ -42,6 +42,8 @@ class _Stats:
     pages: int = 1
     backfill: bool = False
     missed: str = ""
+    missed_start: datetime | None = None
+    missed_end: datetime | None = None
     batch: str | None = None
     batch_total: int | None = None
 
@@ -118,7 +120,20 @@ class _Session:
         stats = self.stats
         return FetchRunRecord(self.src.id, self.started, self.at(), self.last_status if status is None else status,
                               stats.count, result, error, summary, note, stats.latest,
-                              stats.backfill, stats.missed, stats.pages)
+                              stats.backfill, stats.missed, stats.pages, stats.missed_start, stats.missed_end)
+
+    def mark_missed(self, boundary, known=None):
+        dates = [stamp for stamp in (boundary, known) if stamp is not None]
+        # RSS 的 known 是上次已知起点，boundary 是本次翻到的终点。
+        start = min(dates) if len(dates) == 2 else known
+        end = max(dates) if len(dates) == 2 else boundary
+        baseline = self.state.baseline_at
+        if baseline and ((end and end < baseline) or (end is None and start and start < baseline)):
+            return
+        if baseline and start and start < baseline:
+            start = baseline
+        self.stats.missed_start, self.stats.missed_end = start, end
+        self.stats.missed = _range(start, end)
 
     def _once(self, url, kind, headers, data):
         self.active()
@@ -177,8 +192,68 @@ def _range(oldest, known_latest=None):
     def label(value):
         return value.astimezone(BJ).strftime("%Y-%m-%d %H:%M") if value else "时间未知"
     # SourceState 没有上次最新时间，不能根据外部 id 编造这个上界。
-    upper = label(known_latest) if known_latest else "上次已知最新时间（状态未提供）"
+    upper = label(known_latest) if known_latest else "上次已知最新时间（状态未提供）" if oldest else "时间未知"
     return f"{label(oldest)} ~ {upper}（北京时间）"
+
+
+def missed_interval(text: str, start=None, end=None, *, reference=None) -> tuple[datetime | None, datetime | None]:
+    """优先读取结构化起止时间；历史文本只在读取时解析，不改旧记录。"""
+    def moment(value):
+        if value is None:
+            return None
+        stamp = value if isinstance(value, datetime) else datetime.fromisoformat(value)
+        return stamp.replace(tzinfo=BJ) if stamp.tzinfo is None else stamp.astimezone(BJ)
+    if start is not None or end is not None:
+        return moment(start), moment(end)
+    matches = list(re.finditer(r"(?<!\d)(?:(\d{4})-)?(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?(?!\d)", text))
+    values = []
+    reference = moment(reference) if reference else None
+    for match in matches:
+        year = int(match[1]) if match[1] else reference.year if reference else None
+        if year is None:
+            continue
+        try:
+            stamp = datetime(year, int(match[2]), int(match[3]), int(match[4] or 0), int(match[5] or 0), int(match[6] or 0), tzinfo=BJ)
+            if not match[1] and reference and stamp > reference + timedelta(days=1):
+                stamp = stamp.replace(year=year - 1)
+            values.append(stamp)
+        except ValueError:
+            continue
+    if len(values) >= 2:
+        return min(values), max(values)
+    if values:
+        return (None, values[0]) if "之前" in text or "时间未知" in text or "起点未知" in text else (values[0], None)
+    return None, None
+
+
+def has_missed(text: str, baseline_at=None, start=None, end=None, *, reference=None) -> bool:
+    """按终点、无终点时按起点过滤基线前漏抓；两端未知或无基线时照算。"""
+    if not (text and text.strip()) and start is None and end is None:
+        return False
+    since, until = missed_interval(text, start, end, reference=reference or baseline_at)
+    boundary = until if until is not None else since
+    return baseline_at is None or boundary is None or boundary >= baseline_at
+
+
+def merge_missed_ranges(segments, baseline_at=None, *, reference=None):
+    """合并仍有效的漏抓段；任一段两端未知时保留未知，跨基线截断。"""
+    valid = []
+    for text, start, end in segments:
+        if not has_missed(text, baseline_at, start, end, reference=reference):
+            continue
+        start, end = missed_interval(text, start, end, reference=reference)
+        clipped = bool(start and baseline_at and start < baseline_at)
+        valid.append((text, baseline_at if clipped else start, end, clipped))
+    if not valid:
+        return "", None, None
+    unknown = next((span for span in valid if span[1] is None and span[2] is None), None)
+    if unknown is not None:
+        return unknown[0], None, None
+    start = min((span[1] for span in valid if span[1] is not None), default=None)
+    end = max((span[2] for span in valid if span[2] is not None), default=None)
+    # 单段的历史原文仍供内部状态查看；合并、截断才重写内存中的显示文本。
+    text = valid[0][0] if len(valid) == 1 and valid[0][0] and not valid[0][3] else _range(start, end)
+    return text, start, end
 
 
 def _feeds(session):
@@ -198,7 +273,7 @@ def _feeds(session):
             _check(parsed, session)
         except _Failure:
             if page > 1:
-                stats.missed = _range(oldest)
+                session.mark_missed(oldest, state.last_latest_at)
             raise
         if parsed.latest_at and (stats.latest is None or parsed.latest_at > stats.latest):
             stats.latest = parsed.latest_at
@@ -219,7 +294,7 @@ def _feeds(session):
         if state.last_ok or caught:
             break
         if page == 3:
-            stats.missed = _range(oldest)
+            session.mark_missed(oldest, state.last_latest_at)
     if stats.count == 0:
         raise _Failure(ErrorType.EMPTY, "页面能打开，但一条都读不出来", session.last_status)
 
@@ -259,7 +334,7 @@ def _directory(session):
             stats.items.extend(parsed.items)
             stats.count += len(parsed.items)
     except _Failure as failure:
-        if failure.summary == "robots 禁止":
+        if failure.summary == "robots 禁止" or failure.error == ErrorType.RATE_LIMITED:
             raise
         raise _Failure(ErrorType.YC_UNREADABLE, "读不到公司目录", session.last_status) from None
     except (ValueError, TypeError, KeyError, IndexError):
@@ -282,15 +357,22 @@ def _newsletters(session):
         raise _Failure(ErrorType.EMPTY, "通讯期列表为空", session.last_status)
     def known(issue):
         return issue.url in state.known_issue_urls or (issue.external_id and issue.external_id in state.known_issue_urls)
-    pending = [issue for issue in issues if not known(issue)]
+    pending = [issue for issue in issues if not known(issue) and
+               (state.baseline_at is None or issue.at is None or issue.at >= state.baseline_at)]
     # 最新已知期也读一遍，使用真实发布时间检查过期，不能用 lastmod 代替。
     selected = pending[:3]
     if not selected or selected[0].url != issues[0].url:
         selected = [issues[0]] + selected[:2]
-    if len(pending) > sum(not known(issue) for issue in selected) and (state.known_issue_urls or not state.last_ok):
-        first_unfetched = next(issue for issue in pending if issue not in selected)
-        last_known = next((issue.at for issue in issues if known(issue)), None)
-        stats.missed = _range(first_unfetched.at, last_known)
+    missing = [issue for issue in pending if issue not in selected]
+
+    def mark_missing():
+        # 只取本次没抓成的缺期，不把已知期或已成功补回的期夹进漏抓段。
+        dates = [issue.at for issue in missing if issue.at is not None]
+        if missing:
+            session.mark_missed(min(dates) if dates else None, max(dates) if dates else None)
+
+    if state.known_issue_urls or not state.last_ok:
+        mark_missing()
     for index, issue in enumerate(selected):
         stats.pages = index + 1
         try:
@@ -305,7 +387,8 @@ def _newsletters(session):
             _check(parsed, session)
         except _Failure:
             if index > 0 or state.known_issue_urls or not state.last_ok:
-                stats.missed = _range(issue.at, next((ref.at for ref in issues if known(ref)), None))
+                missing.extend(ref for ref in selected[index:] if not known(ref))
+                mark_missing()
             raise
         if not known(issue):
             for item in parsed.items:
@@ -361,7 +444,7 @@ def fetch_source(src: SourceDef, state: SourceState, transport: Transport, robot
     session.runs.append(session.record(result, error, summary, note))
     return FetchOutcome(src, session.runs, stats.items, error is None or stopped, error, stopped,
                         stats.label, stats.latest.astimezone(BJ).date() if stats.latest else None,
-                        stats.missed, stats.batch, stats.batch_total)
+                        stats.missed, stats.batch, stats.batch_total, stats.missed_start, stats.missed_end)
 
 
 def fetch_all(sources: list[SourceDef], states: dict[str, SourceState], transport: Transport,

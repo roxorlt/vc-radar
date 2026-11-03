@@ -24,6 +24,11 @@ BASE = "https://radar.test/private"
 
 @pytest.fixture(autouse=True)
 def offline(monkeypatch):
+    class FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return NOW.astimezone(tz) if tz else NOW.replace(tzinfo=None)
+    monkeypatch.setattr(backfill, "datetime", FixedDatetime)
     def forbidden(*args, **kwargs):
         raise AssertionError("R 测试禁止网络、真实模型和密钥读取")
     monkeypatch.setattr(config, "load_api_key", forbidden)
@@ -296,12 +301,12 @@ def test_pipeline_sends_once_separate_top_tens_and_preview_is_read_only(tmp_path
     main, = cfg.outbox_dir.glob("2026-11-06-??????.json")
     text = json.loads(main.read_text())["text"]
     lines = text.splitlines()
-    assert lines[1].startswith("本周共 11 家")
-    assert lines[2].startswith("另补充此前漏掉的 10 家")
+    assert lines[1].startswith("1. Weekly 11｜")
+    assert "另补充此前漏掉的" not in text and "本周共" not in text
     start = lines.index(wording.BACKFILL_TITLE)
-    assert len([line for line in lines[3:start] if line[:1].isdigit()]) == 10
+    assert len([line for line in lines[1:start] if line[:1].isdigit()]) == 10
     assert lines[start + 1].startswith("1. Extra 12｜") and lines[start + 10].startswith("10. Extra 03｜")
-    assert lines[start + 11] == (f"另有 2 家没有列出，[在往期页看]({BASE}/#backfill)" if passed else "另有 2 家没有列出")
+    assert lines[start + 11] == (f"还有一些没有列出，[在往期页看]({BASE}/#backfill)" if passed else "还有一些没有列出")
     assert "上次推送后共" not in text and "非美国" not in text and "美国公司" not in text
     assert pipeline.run(cfg, args, pipeline.Clock(PUSH.date(), time(8, 40))) == 0
     with pipeline._read_database(cfg.db_path) as conn:
@@ -312,7 +317,8 @@ def test_pipeline_sends_once_separate_top_tens_and_preview_is_read_only(tmp_path
     assert pipeline.preview_push(cfg, preview_args, pipeline.Clock(PUSH.date(), time(8, 40))) == 0
     assert contents(cfg) == before
     preview, = cfg.outbox_dir.glob("2026-11-06-preview-*.json")
-    assert "本周共 11 家" in json.loads(preview.read_text())["text"]
+    preview_text = json.loads(preview.read_text())["text"]
+    assert "本周共" not in preview_text and "1. Weekly 11｜" in preview_text
     with pipeline._read_database(cfg.db_path) as conn:
         digest = conn.execute("SELECT * FROM digest WHERE date='2026-11-06'").fetchone()
         assert len(json.loads(digest["event_ids_json"])) == 11 and len(json.loads(digest["supplement_event_ids_json"])) == 10
@@ -337,8 +343,8 @@ def test_no_new_push_keeps_source_and_last_summary_before_supplement(tmp_path):
     data = DigestData(PUSH.date(), NOW, PUSH, "没有新增", extra_sections=sections,
                       last_push_summary=(date(2026, 10, 30), 4))
     lines = render.render_push(data, links_file=cfg.links_file).splitlines()
-    assert lines[1:6] == [wording.NO_NEW, "另补充此前漏掉的 1 家", "已接入 0 个来源网站，全部正常",
-                          "上一次有新公司是 10-30 那期，4 家", wording.BACKFILL_TITLE]
+    assert lines[1:3] == [wording.NO_NEW, wording.BACKFILL_TITLE]
+    assert lines[3].startswith("1. Extra｜") and len(lines) == 4
 
 
 def test_preview_before_push_excludes_supplement_and_does_not_mark_it(tmp_path):
@@ -350,7 +356,8 @@ def test_preview_before_push_excludes_supplement_and_does_not_mark_it(tmp_path):
     assert contents(cfg) == before
     path, = cfg.outbox_dir.glob("*-preview-*.json")
     text = json.loads(path.read_text())["text"]
-    assert wording.NO_NEW in text and "另补充此前漏掉的 1 家" in text
+    assert wording.NO_NEW in text and wording.BACKFILL_TITLE in text and "1. Extra｜" in text
+    assert "另补充此前漏掉的" not in text
     assert "本周共 1 家" not in text
     with pipeline._read_database(cfg.db_path) as conn:
         assert conn.execute("SELECT backfill_push_date FROM company").fetchone()[0] is None
@@ -500,7 +507,8 @@ def test_dynamic_transition_counts_and_archive_filters_before_and_after_apply(tm
     assert not unsent_ids & set(result["admitted"] + result["recent"] + result["dated"])
     assert unsent_ids <= set(result["tag"])
     assert len(result["beforeAdmitted"]) == 4
-    assert "补充未推送" in result["html"] and "此前漏掉" in result["html"]
+    assert '<span class="state-flag">补充未推送</span>' in result["html"] and "此前漏掉" in result["html"]
+    assert 'class="dgroup-h"' in result["html"]
     assert "总部待核" not in result["html"] and "非美国" not in result["html"]
 
 
@@ -522,7 +530,8 @@ def test_supplement_is_visible_in_archive_by_push_period_and_recent_days(tmp_pat
     assert event["push_date"] == "2026-11-06" and event["backfill"] == "此前漏掉"
     detail = json.loads((path / "c/extra.json").read_text())
     assert detail["companies"][0]["backfill"] == "此前漏掉"
-    assert data["status"]["pending_ratios"]["denominator"] == 0
+    assert snapshot(cfg, PUSH)["status"]["pending_ratios"]["denominator"] == 0
+    assert "status" not in data
     if shutil.which("node"):
         script = r"""
           const app=require(process.argv[1]),fs=require('fs'),data=JSON.parse(fs.readFileSync(process.argv[2]));
@@ -635,12 +644,13 @@ def test_review_switch_controls_all_four_page_references(tmp_path):
     data = DigestData(PUSH.date(), NOW, PUSH, "没有新增", base_url=BASE, extra_sections=sections,
                       new_evidence_count=2, yc_new_batch=("Fall 2026", 31))
     before = render.render_push(data, links_file=cfg.links_file)
-    assert "YC 新一批 31 家" in before and "本周 2 家资料有出入" in before
-    assert "另有 1 家没有列出" in before
+    assert "YC 新一批 31 家" in before and "资料有出入" not in before
+    assert "还有一些没有列出" in before
     assert "/#" not in before and "见网页" not in before and "在往期页看" not in before
     after = render.render_push(replace(data, review_site_passed=True), links_file=cfg.links_file)
-    for route in ("yc", "sources", "backfill", "week"):
+    for route in ("backfill", "week"):
         assert f"{BASE}/#{route}" in after
+    assert f"{BASE}/#yc" in after and "#sources" not in after
     assert render.remove_page_links(after) == before
 
 

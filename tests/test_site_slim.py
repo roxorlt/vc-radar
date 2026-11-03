@@ -76,12 +76,12 @@ def test_large_snapshot_stays_below_mobile_budget(tmp_path, monkeypatch):
             assert set(event) == {"id", "company_id", "round", "round_text", "amount", "leads", "follows",
                                   "hq", "hq_basis", "date", "first_seen", "push_date", "country", "country_basis", "city"}
             assert event["push_date"] is None
-        assert data["status"]["deepdive_progress"]["total"] == 50
+        assert site._snapshot(conn, cfg, NOW)["status"]["deepdive_progress"]["total"] == 50
         forbidden = {"excerpt", "body", "structured", "structured_json", "extraction", "extraction_json",
                      "result_json", "materials_json", "links_json", "judgement", "debug"}
         for output in path.rglob("*.json"):
             payload = json.loads(output.read_bytes())
-            assert payload["wording"]["extraction"] == "文本抽取"
+            assert payload["wording"]["description"] == "简介"
             business = {key: value for key, value in payload.items() if key != "wording"}
             assert not forbidden.intersection(json_keys(business)), output
             assert "Synthetic private" not in output.read_text()
@@ -131,9 +131,9 @@ def test_baselines_reactivated_events_and_unpushed_list_match_sql(seeded):
                 "console.log(JSON.stringify(ui.listHtml(d,{period:'all',tag:'all',round:'all',status:'all'})));",
                 path / "data.json")
     assert "Only-Baseline" not in html and "首次运行时已有，未推送" not in html
-    assert "下次推送：11-06 周五 09:00" in html
+    assert "下次推送：11-06 09:00" in html and "TryNearby" in html
     baseline_html = render_page(path, "detailHtml", "only-baseline")
-    assert "首次运行时已有，未推送" in baseline_html and "下次推送" not in baseline_html
+    assert "首次运行时已有，未推送" not in baseline_html and "下次推送" not in baseline_html
     assert "关键字段" in baseline_html and "全部来源" in baseline_html
     for text in ["简介", "深度解读", "解读生成中", "融资历史", "手写的合成简介"]:
         assert text not in baseline_html
@@ -161,7 +161,7 @@ def test_detail_loader_fetches_only_requested_company_and_caches(seeded):
         return {ok:true,json:async()=>JSON.parse(fs.readFileSync(path.join(path.dirname(process.argv[2]),decodeURIComponent(url))))};
       });
       (async()=>{
-        ui.weekHtml(data); ui.listHtml(data,{period:'all',tag:'all',round:'all',status:'all'}); ui.sourcesHtml(data);
+        ui.weekHtml(data); ui.listHtml(data,{period:'all',tag:'all',round:'all',status:'all'}); ui.ycHtml(data);
         const before=urls.length;
         const [first,second]=await Promise.all([load('mach9'),load('mach9')]);
         const cached=await load('mach9'),missing=await load('missing');
@@ -295,6 +295,6 @@ def test_slow_detail_request_does_not_overwrite_new_route(seeded):
       })().catch(e=>{console.error(e);process.exitCode=1;});
     """, path / "data.json")
     assert checked["loading"]
-    assert "已接入 8 个来源网站" in checked["sources"] and "产品是什么" not in checked["sources"]
+    assert "已接入" not in checked["sources"] and 'class="dgroup-h"' in checked["sources"] and "产品是什么" not in checked["sources"]
     assert "产品是什么" in checked["html"]
     assert checked["urls"] == ["./data.json", "./c/mach9.json"]

@@ -13,13 +13,13 @@ NOW = datetime(2026, 10, 30, 8, 30, tzinfo=BJ)
 BATCHES = ["Fall 2026", "Summer 2026", "Spring 2026", "Winter 2026"]
 SOURCE_DEFS = [
     SourceDef("tc_venture", "TechCrunch", "venture", "https://techcrunch.com/venture/feed", "rss", 2, 1),
-    SourceDef("tc_ai", "TechCrunch", "ai", "https://techcrunch.com/ai/feed", "rss", 2, 2),
-    SourceDef("cbn", "Crunchbase News", "news", "https://news.crunchbase.com/feed", "rss", 2, 3),
+    SourceDef("tc_startups", "TechCrunch", "ai", "https://techcrunch.com/ai/feed", "rss", 2, 2),
+    SourceDef("cbn_main", "Crunchbase News", "news", "https://news.crunchbase.com/feed", "rss", 2, 3),
     SourceDef("yc_launches", "YC Launches", "launches", "https://www.ycombinator.com/launches", "api", 2, 4),
     SourceDef("yc_directory", "YC 公司目录", "companies", "https://www.ycombinator.com/companies", "api", None, 5),
     SourceDef("launch_hn", "Launch HN", "launches", "https://hn.algolia.com/api", "api", 2, 6),
     SourceDef("strictlyvc", "StrictlyVC", "fundings", "https://www.strictlyvc.com", "page", 2, 7),
-    SourceDef("term_sheet", "Term Sheet", "venture", "https://content.fortune.com", "api", 2, 0),
+    SourceDef("ts_web", "Term Sheet", "venture", "https://content.fortune.com", "api", 2, 0),
     SourceDef("alleywatch", "AlleyWatch", "single", "https://www.alleywatch.com/feed", "rss", 2, 8),
     SourceDef("official", "公司官方", "news", "https://official.invalid", "page", None, 9),
     SourceDef("venturebeat", "VentureBeat", "news", "https://venturebeat.com/feed", "rss", 2, 10),
@@ -28,6 +28,9 @@ SOURCE_DEFS = [
     SourceDef("x", "X", "posts", "https://x.com", "api", 2, 13),
 ]
 SOURCES = {source.id: source for source in SOURCE_DEFS}
+# 旧用例的参数别名只留在测试辅助入口，写入库的一律是正式 source_id。
+SOURCES.update({alias: SOURCES[source_id] for alias, source_id in
+                (("tc_ai", "tc_startups"), ("cbn", "cbn_main"), ("term_sheet", "ts_web"))})
 
 
 @pytest.fixture
@@ -43,7 +46,7 @@ def add(conn, *, source="tc_venture", name="Example", website="https://example.a
         external_id=None, url=None, structured=None, ai=None, social=None, leads=None, follows=None, body="",
         summary="这是一段手写的测试简介。", **overrides):
     serial = str(conn.execute("SELECT COUNT(*) FROM raw_item").fetchone()[0] + 1)
-    item = RawItem(source, external_id or serial, url or f"{SOURCES[source].url.split('/feed')[0].rstrip('/')}/synthetic/{serial}",
+    item = RawItem(SOURCES[source].id, external_id or serial, url or f"{SOURCES[source].url.split('/feed')[0].rstrip('/')}/synthetic/{serial}",
                    f"{name} 的合成融资消息", published, excerpt="手写测试摘录。", body=body, structured=structured or {})
     extracted = Extracted(company_name=name, website=website, round_text=round_text, amount_text=amount,
                           hq_text=hq, hq_quote=f"合成总部字段：{hq}" if hq else "",
@@ -346,7 +349,7 @@ def test_strictlyvc_original_confidence_and_display_source(conn):
     add(conn, source="strictlyvc", amount="$11M", structured={"original_link": "https://news.crunchbase.com/synthetic/article"})
     assert event(conn, eid)["amount_text"] == "$11M"
     sources = scan.collect_listing(conn, NOW.date(), weekly=True)["cards"][0].sources
-    assert [source.name for source in sources] == ["Crunchbase News", "Term Sheet"]
+    assert [source.name for source in sources] == ["StrictlyVC", "Term Sheet"]
 
 
 def test_conflicting_headquarters_require_official_or_directory(conn):
@@ -640,7 +643,7 @@ def test_strictlyvc_fortune_article_is_other_media_not_term_sheet(conn):
     eid, *_ = add(conn, source="tc_venture", amount="$10M")
     add(conn, source="strictlyvc", amount="$11M", structured={"original_link": "https://fortune.com/synthetic/story"})
     assert event(conn, eid)["amount_text"] == "$10M"
-    assert {source.name for source in scan.collect_listing(conn, NOW.date(), weekly=True)["cards"][0].sources} == {"TechCrunch", "Fortune"}
+    assert {source.name for source in scan.collect_listing(conn, NOW.date(), weekly=True)["cards"][0].sources} == {"TechCrunch", "StrictlyVC"}
 
 
 def test_company_summary_is_not_rewritten_after_listing(conn):

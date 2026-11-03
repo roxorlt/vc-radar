@@ -108,14 +108,14 @@ def test_card_sources_follow_prd_order_and_each_publishers_first_ingestion(conn)
     assert card.amount_usd == 10e6
 
 
-def test_source_order_uses_registry_values_without_mutating_fetch_priority(conn, monkeypatch):
+def test_source_order_is_independent_of_fetch_priority(conn, monkeypatch):
     add_item(conn, amount="$10M")
     add_item(conn, "cbn_main", amount="$20M")
     changed = [replace(source, order=30) if source.name == "TechCrunch" else source for source in registry.P0_SOURCES]
     monkeypatch.setattr(registry, "P0_SOURCES", changed)
     card = scan.collect_listing(conn, NOW.date(), weekly=True)["cards"][0]
-    assert card.sources[0].name == "Crunchbase News"
-    assert card.amount_usd == 20e6
+    assert card.sources[0].name == "TechCrunch"
+    assert card.amount_usd == 10e6
     assert next(source.order for source in registry.P0_SOURCES if source.id == "ts_web") == 0
 
 

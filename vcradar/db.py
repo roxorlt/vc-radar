@@ -14,7 +14,7 @@ from .cal import calendar_rows
 from .config import BJ
 from .models import SourceDef, SourceState
 
-SCHEMA_VERSION = 13
+SCHEMA_VERSION = 15
 SCHEMA_SQL: str = """
 CREATE TABLE IF NOT EXISTS source (
     id TEXT PRIMARY KEY, name TEXT NOT NULL, column_name TEXT NOT NULL, url TEXT NOT NULL,
@@ -126,6 +126,8 @@ def connect(path: Path) -> sqlite3.Connection:
         conn.executescript(SCHEMA_SQL)
         with conn:
             migrate_backfill(conn)
+            migrate_v17(conn)
+            migrate_missed_bounds(conn)
             version = conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
             previous_version = int(version[0]) if version else 0
             if "country" not in {column[1] for column in conn.execute("PRAGMA table_info(company)")}:
@@ -181,6 +183,53 @@ def connect(path: Path) -> sqlite3.Connection:
     except BaseException:
         conn.close()
         raise
+
+
+def migrate_v17(conn: sqlite3.Connection) -> None:
+    """幂等增加内部计数、来源快照和漏抓起止时间，不回填旧推送。"""
+    for table, additions in {
+        "digest": {"counts_json": "TEXT NOT NULL DEFAULT '{}'", "card_sources_json": "TEXT NOT NULL DEFAULT '{}'"},
+        "fetch_run": {"missed_start": "TEXT", "missed_end": "TEXT"},
+    }.items():
+        columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        for name, definition in additions.items():
+            if name not in columns:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
+
+
+def migrate_missed_bounds(conn: sqlite3.Connection) -> tuple[int, int]:
+    """回填只有漏抓文本的历史起止列，返回候选行数和回填行数；不改原文。"""
+    from .fetcher import missed_interval
+    candidates = updated = 0
+    rows = conn.execute("SELECT id,missed_range,started_at FROM fetch_run "
+                        "WHERE missed_start IS NULL AND missed_end IS NULL AND missed_range<>''").fetchall()
+    for ident, text, reference in rows:
+        if not text.strip():
+            continue
+        candidates += 1
+        try:
+            start, end = missed_interval(text, reference=reference)
+        except (ValueError, TypeError, OverflowError):
+            continue
+        if start is None and end is None:
+            continue
+        conn.execute("UPDATE fetch_run SET missed_start=?,missed_end=? WHERE id=? "
+                     "AND missed_start IS NULL AND missed_end IS NULL",
+                     (start.astimezone(BJ).isoformat() if start else None,
+                      end.astimezone(BJ).isoformat() if end else None, ident))
+        updated += 1
+    return candidates, updated
+
+
+def first_issue_generated_at(conn: sqlite3.Connection) -> datetime | None:
+    """读取首期 generated_at；没有首期时间时不臆造基线。"""
+    row = conn.execute("SELECT generated_at FROM digest WHERE date=(SELECT value FROM meta WHERE key='first_issue_date')").fetchone()
+    if not row or not row[0]:
+        row = conn.execute("SELECT generated_at FROM digest WHERE push=1 AND status='基线' AND generated_at IS NOT NULL ORDER BY date LIMIT 1").fetchone()
+    if not row or not row[0]:
+        return None
+    stamp = datetime.fromisoformat(row[0])
+    return stamp.replace(tzinfo=BJ) if stamp.tzinfo is None else stamp.astimezone(BJ)
 
 
 def migrate_backfill(conn: sqlite3.Connection) -> None:
@@ -361,6 +410,7 @@ def load_source_states(conn: sqlite3.Connection) -> dict[str, SourceState]:
     """读取各地址最近一次结果、已知条目/期网址和 YC 目录快照。"""
     result = {}
     metadata = dict(conn.execute("SELECT key, value FROM meta"))
+    baseline = first_issue_generated_at(conn)
     for source in conn.execute("SELECT id, crawl_status FROM source"):
         sid = source["id"]
         latest = conn.execute(
@@ -384,6 +434,7 @@ def load_source_states(conn: sqlite3.Connection) -> dict[str, SourceState]:
             known_external_ids={item["external_id"] for item in items}, known_issue_urls=issues,
             yc_last_batch=metadata.get(f"yc_last_batch:{sid}"),
             yc_last_batch_total=int(total) if total is not None else None,
+            baseline_at=baseline,
         )
         # 合并 main 前的 dataclass 也允许此属性；无需改共享契约文件。
         stamp = datetime.fromisoformat(last_success[0]) if last_success else None

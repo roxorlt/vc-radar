@@ -170,7 +170,8 @@ def test_no_rate_and_unknown_currency_share_sort_bucket_and_never_compare(tmp_pa
         assert [next(e["name"] for e in data["events"] if e["id"] == eid) for eid in data["listing"]] == [c.name for c in cards]
         unconverted = next(e for e in data["events"] if e["name"] == "Unconverted")
         assert unconverted["amount"] == "€80 亿（暂未换算成美元）"
-        assert data["status"]["fx"]["message"] == "汇率没有取到"
+        assert site._snapshot(conn, cfg, NOW)["status"]["fx"]["message"] == "汇率没有取到"
+        assert "status" not in data
 
 
 def test_unconverted_rows_recover_without_new_source_and_then_freeze(tmp_path):

@@ -187,8 +187,8 @@ def test_39_5_and_6_counts_and_window_exclude_supplement(env):
     sections,_=backfill.collect_supplement(conn,cfg,PUSH.date())
     text=render.render_push(DigestData(PUSH.date(),NOW,PUSH,'没有新增',extra_sections=sections),links_file=cfg.links_file)
     assert text.splitlines()[1]=='本周没有发现新的天使轮、种子轮、A 轮融资。'
-    assert text.splitlines()[2]=='另补充此前漏掉的 10 家'
-    assert '另有 2 家没有列出' in text
+    assert text.splitlines()[2] == '之前漏掉的公司（一次性补充）'
+    assert '还有一些没有列出' in text and '另补充此前漏掉的' not in text
     assert conn.execute('SELECT generated_at FROM digest').fetchone()[0]==window
     assert pipeline._listing_for_issue(conn,PUSH.date())['event_ids']==[]
 
@@ -388,7 +388,12 @@ def test_39_2_applied_file_staging_failure_rolls_back(env,monkeypatch):
     assert 'applied_at' not in json.loads(next(cfg.outbox_dir.glob('backfill-verify-*.json')).read_text())
 
 
-def test_39_1_production_spend_log_appends_even_when_manifest_is_overwritten(env):
+def test_39_1_production_spend_log_appends_even_when_manifest_is_overwritten(env, monkeypatch):
+    class FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return NOW.astimezone(tz) if tz else NOW.replace(tzinfo=None)
+    monkeypatch.setattr(backfill, 'datetime', FixedDatetime)
     conn,test_cfg=env
     add_event(conn,'Spend',country=None)
     conn.commit()

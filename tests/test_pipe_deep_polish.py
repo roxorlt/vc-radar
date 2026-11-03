@@ -41,9 +41,11 @@ def test_handoff_build_deep_each_company_build_and_both_forced_builds(tmp_path, 
         handoffs.append((path, path.read_bytes()))
         return path
 
-    def build(conn, cfg, *, now):
+    def build(conn, cfg, *, now, snapshot_slot=None):
         assert handoffs and handoffs[0][0].read_bytes() == handoffs[0][1]
         events.append(("build", now))
+        if now.strftime("%H:%M:%S") in {"09:30:00", "10:30:00"}:
+            assert snapshot_slot == now.strftime("%H%M")
         clock.advance(1)
         return cfg.state_dir / "test/site"
 
@@ -59,7 +61,7 @@ def test_handoff_build_deep_each_company_build_and_both_forced_builds(tmp_path, 
             pass
         assert kwargs["deep_deadline"].strftime("%H:%M") == "09:30"
         assert kwargs["deep_final"].strftime("%H:%M") == "10:30"
-        assert kwargs["publish"] is kwargs["checkpoint"]
+        assert callable(kwargs["publish"]) and callable(kwargs["checkpoint"])
         return original_deep(conn, cfg, task_clock, client=object(), link_records=[], **kwargs)
 
     monkeypatch.setattr(outbox, "write_main", write_main)
@@ -75,7 +77,8 @@ def test_handoff_build_deep_each_company_build_and_both_forced_builds(tmp_path, 
     assert [stamp.strftime("%H:%M:%S") for stamp in builds[-2:]] == ["09:30:00", "10:30:00"]
     for row in rows:
         online = datetime.fromisoformat(row["online_at"])
-        assert row["status"] == "完成" and online > datetime.fromisoformat(ended[row["company_id"]])
+        assert row["status"] == "完成" and online >= datetime.fromisoformat(ended[row["company_id"]])
+        assert online in builds  # 上线时间与实际导出的发布时刻一致；瞬时假任务可同刻完成。
         assert online < builds[-2]
     payload = json.loads(handoffs[0][1])
     assert payload["generated_at"].startswith("2026-10-30 08:40")
@@ -212,5 +215,7 @@ def test_initial_site_build_only_writes_the_mode_local_site(tmp_path, monkeypatc
     clock = ManualClock("2026-10-30T08:55:00+08:00")
     pipeline._after_handoff(conn, cfg, args, clock, clock.now().date(), {})
     assert (cfg.state_dir / ("test/site/data.json" if test_mode else "site/data.json")).exists()
-    assert not (cfg.state_dir / "test-site").exists()
+    assert (cfg.state_dir / "test-site").exists() is test_mode
+    if test_mode:
+        assert (cfg.state_dir / "test-site/2026-10-30/0855/status.json").exists()
     conn.close()
