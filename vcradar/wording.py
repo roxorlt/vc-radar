@@ -11,7 +11,7 @@ PRODUCT_NAME = "早期创投监控"
 PUSH_TITLE = "{day} 周{weekday} · 早期融资 · 本周"
 MARK_ORDER = ("新一轮", "大额", "补抓", "金额待核")
 MARK_LABELS = {"补抓": "补录", "金额待核": "金额说法不一"}
-STATUS_LABELS = {"轮次待核": "轮次待确认", "总部待核": "已纳入"}
+STATUS_LABELS = {"轮次待核": "轮次待确认", "总部待核": "已纳入", "已过滤": "不在收录范围"}
 FETCH_LABELS = {"没轮到": "这次没来得及抓", "已停抓": "已停止抓取"}
 STOP_REASONS = {"封禁": "对方封禁", "异议": "对方提出异议", "人工停抓": "人工停止抓取"}
 NO_NEW = "本周没有发现新的天使轮、种子轮、A 轮融资。"
@@ -80,10 +80,10 @@ SOURCE_ERRORS = {
 # 静态页面和服务端共用，JSON 带此字典供页面和离线渲染使用。
 SITE_TEXT = {
     "product": PRODUCT_NAME, "week": "本周", "archive": "往期", "back": "‹ 返回往期",
-    "product_label": "产品", "publication_unknown": "发布时间未知", "excluded": "不在收录范围",
+    "product_label": "产品", "publication_unknown": "发布时间未知", "excluded": "不在收录范围", "out_of_scope": "不在收录范围",
     "no_new": NO_NEW,
     "round_pending": "轮次待确认", "tag_pending": "标签待确认", "country_pending": "国家待确认",
-    "city_pending": "城市待确认", "baseline": "首次运行时已有，未推送", "supplement": "此前漏掉",
+    "city_pending": "城市待确认", "supplement": "此前漏掉",
     "round": "轮次", "amount": "金额", "tag": "标签", "status": "状态", "all": "全部",
     "admitted": "已纳入", "angel": "天使轮", "seed": "种子轮", "series_a": "A 轮",
     "ai": "AI相关", "social": "社交/社群相关", "neither": "都不是",
@@ -98,6 +98,7 @@ SITE_TEXT = {
     "country_basis": "国家和依据", "date": "日期", "first_seen": "首次发现", "push_date": "推送日期",
     "key_fields": "关键字段", "current_round": "本轮", "description": "简介", "all_sources": "全部来源", "history": "融资历史",
     "conflicts": "各来源说法不一", "evidence": "资料有出入：",
+    "pushed_value": "推送时写的：", "found_value": "新来源写的：",
     "deep": "深度解读", "deep_pending": "解读生成中", "deep_absent": "暂时没有深度解读",
     "deep_failed": "深度解读生成失败", "point": "要点", "quote": "原句",
     "no_company": "没有找到这家公司", "failed": "失败", "absent": "暂时没有", "skipped": "不做",

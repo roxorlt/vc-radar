@@ -220,6 +220,48 @@ def _display_header(header: dict) -> dict:
             "tags": [wording.display_text(t) for t in header["tags"]]}
 
 
+def _round_display(value: str, reasons=(), *, outside=False) -> str:
+    if outside or value == "过滤":
+        return wording.SITE_TEXT["out_of_scope"] + (f" · {reasons[0]}" if reasons else "")
+    return wording.SITE_TEXT["round_pending"] if value == "待核" or not value else value
+
+
+def _basis_is_sentence(text: str) -> bool:
+    return (len(text) > 60 or bool(re.search(r"\b(?:that|raised|startup|company|firm|based|we|is|has)\b|[。！？!?]", text, re.I))
+            or bool(re.search(r"[a-z]{2,}\.(?:\s|$)|\b[A-Za-z]+(?:[\s-]+[A-Za-z]+){5,}\b", text)))
+
+
+def _short_location(text: str) -> str:
+    location = scan._headquarters_location(text)
+    if not location:
+        match = re.search(r"\b([A-Z][\w'.-]*(?:\s+[A-Z][\w'.-]*)*(?:,\s*[A-Z][\w'.-]*(?:\s+[A-Z][\w'.-]*)*)*)[-–—]based\b", text)
+        if not match:
+            match = re.search(r"\bbased\s+in\s+([^;。\n]+)", text, re.I)
+        location = match[1] if match else ""
+    return re.split(r",?\s+(?:that|which|with|and|but)\b|[。!?]|\.\s", location, maxsplit=1, flags=re.I)[0].strip(" .,，")
+
+
+def _country_basis(company: dict, sources: list[dict]) -> str:
+    basis = (company.get("hq_basis") or "").strip()
+
+    def concise(text, *, conflict=False):
+        text = text.strip()
+        if not _basis_is_sentence(text):
+            return text
+        if conflict:
+            location = _short_location(text)
+            if location and not _basis_is_sentence(location):
+                return placenames.normalize_place_text(location, protected_names=())[0]
+        source = next((source for source in sources if text in {
+            str(source["extraction"].get(key) or "").strip() for key in ("hq_quote", "_hq_basis")}), sources[0] if sources else None)
+        name = (display_name(source["source_id"]) if source.get("source_id") else source["name"]) if source else "来源"
+        return f"{name} 报道"
+
+    if basis.startswith("国家来源有冲突："):
+        return "国家来源有冲突：" + "；".join(concise(part, conflict=True) for part in basis.split("：", 1)[1].split("；"))
+    return concise(basis)
+
+
 def _event(row: dict, company: dict, sources: list[dict], collapsed: set[int], next_label: str, snapshot=None) -> dict:
     from .verify import valid_investor
     first = _moment(row["first_ingested_at"] or row["first_seen"])
@@ -248,6 +290,8 @@ def _event(row: dict, company: dict, sources: list[dict], collapsed: set[int], n
     stored_reasons = _json(row["filter_reasons_json"], [])
     reasons = [wording.filter_reason(reason, round_text=row["round_text"] or "",
                    extractions=[s["extraction"] for s in sources]) for reason in scan.display_filter_reasons(stored_reasons)]
+    reasons = [reason for reason in reasons if reason]
+    outside = bool(reasons) or row["round_norm"] == "过滤"
     legacy_country_filtered = bool(stored_reasons) and not reasons
     marks = set(_json(row["marks_json"], []))
     if row["amount_status"] in {"币种待确认", "暂未换算", "金额待确认"}:
@@ -255,7 +299,7 @@ def _event(row: dict, company: dict, sources: list[dict], collapsed: set[int], n
         marks.discard("金额待核")
     if row["amount_status"] == "金额待核":
         marks.add("金额待核")
-    state = ("已过滤" if stored_reasons else "已纳入" if company["status"] == "总部待核"
+    state = ("已过滤" if outside or stored_reasons else "已纳入" if company["status"] == "总部待核"
              else "轮次待核" if row["round_norm"] == "待核" or company["status"] == "轮次待核" else "已纳入")
     backfill_event = bool(row.get("original_first_ingested_at") and company.get("backfill") and not row.get("backfill_normal"))
     supplement_unsent = backfill_event and company.get("backfill") == "补充未推送"
@@ -266,7 +310,12 @@ def _event(row: dict, company: dict, sources: list[dict], collapsed: set[int], n
         "summary": fx.format_amount_text(placenames.normalize_place_text(company["summary"],
             protected_names=company.get("_place_names", placenames.protected_names(company, [row])))[0], snapshot) if company["summary"] else "",
         "_place_names": company.get("_place_names", placenames.protected_names(company, [row])),
-        "round": row["round_norm"], "round_text": row["round_text"],
+        "round": _round_display(row["round_norm"], reasons, outside=outside), "round_text": row["round_text"],
+        "out_of_scope": outside, "_round_pending": row["round_norm"] == "待核",
+        "_ai": company["ai_label"], "_social": company["social_label"],
+        "_amount_snapshot": snapshot or ({"base": "USD", "rates": {row["amount_currency"]: 1 / row["fx_rate"]},
+            "date": row["fx_date"], "source": row["fx_source"], "stale": row["fx_stale"]}
+            if row.get("amount_currency") and row.get("fx_rate") else {}),
         "amount": label if row["amount_status"] != "未披露" else "金额未披露",
         "amount_status": row["amount_status"], "amount_usd": amount,
         "leads": [v for v in _json(row["leads_json"], []) if valid_investor(v)],
@@ -274,11 +323,11 @@ def _event(row: dict, company: dict, sources: list[dict], collapsed: set[int], n
         "hq": company["hq"], "hq_basis": company["hq_basis"], "date": row["event_date"],
         "country": scan.COUNTRY_PENDING if company["status"] == "总部待核" else company["country"],
         "legacy_country_pending": company["status"] == "总部待核",
-        "country_basis": company["hq_basis"], "city": _city(company),
+        "country_basis": _country_basis(company, sources), "city": _city(company),
         "backfill": wording.SITE_TEXT["supplement"] if company.get("backfill") == "首期漏掉" else "",
         "backfill_event": backfill_event, "supplement_unsent": supplement_unsent,
         "backfill_rank": company.get("backfill_rank"),
-        "company_status": "已纳入" if company["status"] == "总部待核" else wording.display_text(company["status"]),
+        "company_status": wording.STATUS_LABELS.get(company["status"], wording.display_text(company["status"])),
         "admitted": company["status"] in {"已纳入", "总部待核"} and company.get("backfill") != "补充未推送",
         "legacy_country_filtered": legacy_country_filtered,
         "first_seen": company["first_seen"], "first_ingested_at": _stamp(first),
@@ -371,6 +420,83 @@ def _current_funding_points(points: list[dict], event: dict) -> list[dict]:
                    for field in FUNDING_FIELDS if field not in present]
 
 
+def _country_value(value) -> str:
+    text = str(value or "").strip()
+    if not text or text == scan.COUNTRY_PENDING:
+        return scan.COUNTRY_PENDING
+    location = _short_location(text) or text
+    # 旧地名表尚无 The Hague；这里只补任务指定的显示对照，不参与入库判定。
+    return scan._classify_location(location) or {"the hague": "荷兰"}.get(location.casefold()) or placenames.normalize_place_text(location[:60], protected_names=())[0]
+
+
+def _amount_value(value, event: dict) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return wording.SITE_TEXT["amount_missing"]
+    if "（原 " in text:
+        return fx.format_amount_text(text)
+    return fx.format_amount(fx.convert_amount(text, event.get("_amount_snapshot")), text)
+
+
+def _website_value(value) -> str:
+    text = str(value or "").strip()
+    try:
+        return (urlsplit(text if "://" in text else "https://" + text).hostname or "").lower().removeprefix("www.") or wording.SITE_TEXT["missing"]
+    except ValueError:
+        return wording.SITE_TEXT["missing"]
+
+
+def _label_value(value) -> str:
+    text = str(value if value is not None else "").strip()
+    if text.casefold() in {"是", "true", "yes", "1"}:
+        return "是"
+    if text.casefold() in {"否", "false", "no", "0"}:
+        return "否"
+    return wording.SITE_TEXT["tag_pending"]
+
+
+def _header_label(header: dict, label: str, fallback) -> str:
+    tags = {wording.display_text(tag) for tag in header["tags"]}
+    if label in tags:
+        return "是"
+    return _label_value(fallback) if wording.SITE_TEXT["tag_pending"] in tags else "否"
+
+
+def _new_evidence(entries: list[dict], event: dict, judgement: dict, pages: dict) -> list[dict]:
+    header = _frozen_header(event, judgement)
+    pushed = {
+        "国家": header["country"],
+        "轮次": _round_display(judgement.get("round", judgement.get("round_norm", event["round"])), event["filter_reasons"]),
+        "金额": judgement.get("amount_display") or (_amount_value(judgement["amount"], event) if "amount" in judgement else event["amount"]),
+        "官网": _website_value(judgement.get("website", event.get("_website"))),
+        "AI相关": _header_label(header, "AI相关", judgement.get("ai", judgement.get("ai_label", event.get("_ai") if "tags" not in judgement else None))),
+        "社交/社群相关": _header_label(header, "社交/社群相关", judgement.get("social", judgement.get("social_label", event.get("_social") if "tags" not in judgement else None))),
+    }
+    result, shown = [], set()
+    for entry in entries:
+        field = FIELD_NAMES.get(entry.get("field"), entry.get("field"))
+        if field not in pushed or field in shown:
+            continue
+        value = entry.get("value")
+        if field == "国家":
+            found = _country_value(value)
+        elif field == "轮次":
+            normalized = scan.normalize_round(str(value or ""))
+            reasons = [wording.filter_reason("轮次不在范围", round_text=str(value))] if normalized == "过滤" else []
+            found = _round_display(normalized, reasons)
+        elif field == "金额":
+            found = _amount_value(value, event)
+        elif field == "官网":
+            found = _website_value(value)
+        else:
+            found = _label_value(value)
+        if pushed[field] != found:
+            result.append({"field": field, "pushed": pushed[field], "found": found,
+                           "evidence": _evidence(entry.get("evidence", [entry]), pages)})
+            shown.add(field)
+    return result
+
+
 def _deepdive(row: dict | None, pages: list[dict], event: dict, records: list[dict], now: datetime) -> dict:
     if row is None:
         return {"status": "不做" if event["collapsed"] else "还没开始", "online_at": None,
@@ -417,20 +543,15 @@ def _deepdive(row: dict | None, pages: list[dict], event: dict, records: list[di
             missing = [m for m in missing if m not in present]
         names = {**FIELD_NAMES, **FUNDING_FIELDS} if name == "融资" else FIELD_NAMES
         items.append({"name": name, "points": normalized, "missing": list(dict.fromkeys(names.get(m, wording.display_text(m)) for m in missing))})
-    evidence = []
-    for entry in _json(row["new_evidence_json"], []):
-        field = entry.get("field", "")
-        field = FIELD_NAMES.get(field, field)
-        if field not in set(FIELD_NAMES.values()):
-            continue
-        evidence.append({"field": field, "evidence": _evidence(entry.get("evidence", [entry]), pages_by_no)})
+    judgement = _json(row["push_judgement_json"], {})
+    evidence = _new_evidence(_json(row["new_evidence_json"], []), event, judgement, pages_by_no)
     entities = [{"name": e["name"], "url": _object_url(e.get("url", ""), trusted)}
                 for e in result.get("entities", []) if e.get("name")]
     return {"status": row["status"], "online_at": _stamp(row["online_at"]) if row["status"] == "完成" else None, "items": items,
             "sources": list(pages_by_no.values()), "entities": entities,
             "new_evidence": evidence, "found_at": _stamp(row["new_evidence_found_at"]),
             "quality_pending": bool(row["quality_pending"]),
-            "judgement": _json(row["push_judgement_json"], {})}
+            "judgement": judgement}
 
 
 def _frozen_header(event: dict, judgement: dict) -> dict:
@@ -438,10 +559,15 @@ def _frozen_header(event: dict, judgement: dict) -> dict:
     for key in header:
         if key in judgement:
             header[key] = judgement[key]
-    if "ai_label" in judgement and "social_label" in judgement and "tags" not in judgement:
-        header["tags"] = _tags({**judgement, "manual_label": judgement.get("manual_label")})
+    if "country" not in judgement and "hq" in judgement:
+        country = _country_value(judgement["hq"])
+        header["country"] = country if country in scan._COUNTRY_BY_ALIAS.values() else scan.COUNTRY_PENDING
+    if "tags" not in judgement and {"ai", "ai_label", "social", "social_label", "manual_label"}.intersection(judgement):
+        header["tags"] = _tags({"ai_label": judgement.get("ai", judgement.get("ai_label", event["_ai"])),
+                                "social_label": judgement.get("social", judgement.get("social_label", event["_social"])),
+                                "manual_label": judgement.get("manual_label")})
     header["marks"] = [m for m in MARKS if m in header["marks"]]
-    if event["legacy_country_pending"]:
+    if event["legacy_country_pending"] and not {"country", "hq"}.intersection(judgement):
         header["country"] = scan.COUNTRY_PENDING
     return header
 
@@ -677,7 +803,8 @@ def _snapshot(conn, cfg: Config, now: datetime) -> dict:
         company_verification = [v for v in verify_details.get(cid, []) if not v.get("event_id") or v["event_id"] == event["id"]]
         if any(v.get("correction") for v in company_verification):
             company_verification = [v for v in company_verification if v["field"] != "金额" or v.get("correction")]
-        pending = pending_fields(company_rows[cid], {"round_norm": event["round"], "amount_status": event["amount_status"]})
+        pending = pending_fields(company_rows[cid], {"round_norm": "待核" if event["_round_pending"] else "",
+                                                   "amount_status": event["amount_status"]})
         if any(v.get("correction") for v in company_verification):
             pending = [field for field in pending if field != "金额"]
         in_backfill_scope = bool(company_rows[cid].get("backfill") or conn.execute(
@@ -703,6 +830,7 @@ def _snapshot(conn, cfg: Config, now: datetime) -> dict:
                               "sources": list(unique_sources.values())})
             continue
         row = deep_by_company.get(cid)
+        event["_website"] = websites.get(event["name"].strip().casefold(), "")
         deep = _deepdive(row, pages.get((cid, row["run_date"]), []) if row else [], event, records, now)
         trusted = {s[key].get("website", "") for e in history for s in e["sources"] for key in ("structured", "extraction")}
         trusted.update(r["url"] for r in records if r.get("company", "").casefold() == event["name"].casefold()
@@ -712,8 +840,10 @@ def _snapshot(conn, cfg: Config, now: datetime) -> dict:
             unique_sources.setdefault(_same_page(source["url"]), source)
         header = _frozen_header(event, deep.get("judgement", {}))
         confirmed_fields = {v["field"] for v in company_verification if v["text"] == wording.SITE_TEXT["verified"]}
+        judgement = deep.get("judgement", {})
         for field, key in (("国家", "country"), ("标签", "tags"), ("金额", "marks")):
-            if field in confirmed_fields:
+            frozen_keys = {"country", "hq"} if key == "country" else {"tags", "ai", "ai_label", "social", "social_label", "manual_label"} if key == "tags" else {"marks"}
+            if field in confirmed_fields and not frozen_keys.intersection(judgement):
                 header[key] = event[key]
         companies.append({"id": cid, "event_id": event["id"], "header": header,
                           "country": event["country"], "country_basis": event["country_basis"], "backfill": event["backfill"],
@@ -801,7 +931,7 @@ def _snapshot(conn, cfg: Config, now: datetime) -> dict:
                  "yc": [e["id"] for e in week_events if e["collapsed"] and e["status"] == "已纳入"],
                  "filtered_counts": dict(Counter(e["filter_reasons"][0] for e in week_events if e["filter_reasons"]))},
         "events": events, "listing": [e["id"] for e in _sorted_events(events)
-                                      if e["id"] in eligible and not e["filter_reasons"] and not e["legacy_country_filtered"]],
+                                      if e["id"] in eligible and not e["out_of_scope"] and not e["legacy_country_filtered"]],
         "companies": companies,
         "status": {"sources": fetch, "not_connected": inactive, "pending_ratios": ratios,
                    "fx": fx.status_from_files(cfg, currencies=[e["amount_currency"] for e in _rows(conn, "SELECT amount_currency FROM funding_event WHERE amount_status='暂未换算'")]),
@@ -823,7 +953,7 @@ def _display_source(source: dict) -> dict:
 
 def _display_event(event: dict, *, card=False) -> dict:
     fields = ("id", "company_id", "name", "summary", "round", "amount", "leads", "push_date",
-              "marks", "tags", "status", "pending_reason", "filter_reasons", "country", "country_basis", "backfill", "supplement_unsent", "backfill_rank", "company_status", "admitted")
+              "marks", "tags", "status", "pending_reason", "filter_reasons", "out_of_scope", "country", "country_basis", "backfill", "supplement_unsent", "backfill_rank", "company_status", "admitted")
     if card:
         fields += ("first_ingested_at", "next_push_label")
     else:
@@ -835,6 +965,9 @@ def _display_event(event: dict, *, card=False) -> dict:
     result["marks"] = [wording.MARK_LABELS.get(m, m) for m in result["marks"]]
     result["tags"] = [wording.display_text(t) for t in result["tags"]]
     result["pending_reason"] = wording.display_text(result["pending_reason"])
+    # 历史国家原因不改变轮次显示，但这些事件也没有作为卡片推送过。
+    if event["out_of_scope"] or event["legacy_country_filtered"]:
+        result["push_date"] = None
     return result
 
 

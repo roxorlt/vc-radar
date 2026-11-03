@@ -60,7 +60,8 @@ def source_rows(html, class_name):
 
 
 def facts(html):
-    return dict(re.findall(r"<dt>(.*?)</dt><dd>(.*?)</dd>", html, re.S))
+    grid = re.search(r'<dl class="facts">(.*?)</dl>', html, re.S).group(1)
+    return dict(re.findall(r"<dt>(.*?)</dt><dd>(.*?)</dd>", grid, re.S))
 
 
 def set_sources(data, sources):
@@ -213,7 +214,7 @@ def test_4_key_fields_order_and_verification_basis_for_regular_and_baseline(deta
     html = detail(detail_data)
     fields = facts(html)
     assert list(fields) == ["本轮", "国家和依据", "官网", "日期", "首次发现"]
-    assert "1000 万美元" in fields["本轮"] and 'class="muted">种子轮 · Seed' in fields["本轮"]
+    assert "1000 万美元" in fields["本轮"] and '<small>种子轮（原文 Seed）</small>' in fields["本轮"]
     assert "领投：Synthetic Capital" in Text(fields["本轮"]).text
     assert "跟投：Synthetic Ventures" in Text(fields["本轮"]).text
     # R14n：说明移到字段表下面，仍逐条注明对应字段。
@@ -223,7 +224,7 @@ def test_4_key_fields_order_and_verification_basis_for_regular_and_baseline(deta
     assert "英国 · 伦敦 · 来源写公司在伦敦" in fields["国家和依据"]
     assert "国家查证依据" not in fields["国家和依据"] and "城市查证依据" not in fields["国家和依据"]
     assert "金额查证依据" not in fields["国家和依据"]
-    assert "推送日期" not in html and "未披露" not in html and "成立" not in html
+    assert "推送日期" not in fields and all("未披露" not in value for value in fields.values()) and "成立" not in html
 
 
 @pytest.mark.parametrize("amount", ["1000 万美元", "金额待确认", "金额说法不一", "€1100 万（暂未换算成美元）", "", "金额未披露"])
@@ -306,17 +307,17 @@ def test_5_archive_has_only_issue_select_and_prescribed_drawer_actions(detail_da
     assert status < backfill and 'data-value="backfill"' not in html
 
 
-def test_6_detail_order_keeps_verification_before_description_and_history_in_toc(detail_data):
+def test_6_detail_order_keeps_only_facts_verification_and_history_in_toc(detail_data):
     """维护者x手改：按 V17d usage「小标题栏加融资历史」，目录在第 8 项后、全部来源前加融资历史。"""
     company = detail_data["companies"][0]
     company["verification"] = [{"field": "国家", "text": "入库时已查证", "urls": [], "quotes": []}]
     company["conflicts"] = [{"field": "金额", "values": [{"url": "https://synthetic.example/", "name": "合成来源", "value": "金额不同"}]}]
     html = detail(detail_data)
     headings = [Text(h).text for h in re.findall(r'<h2 class="sec-t"[^>]*>(.*?)</h2>', html, re.S)]
-    assert headings == ["入库查证", "简介", "关键字段"] + [f"{i:02d}{name}" for i, name in enumerate(site.ITEM_NAMES, 1)] + [
+    assert headings == ["简介", "关键字段"] + [f"{i:02d}{name}" for i, name in enumerate(site.ITEM_NAMES, 1)] + [
         "融资历史", "各来源说法不一", "全部来源"]
     assert html.index('class="crumb"') < html.index('class="co-head"') < html.index("资料有出入：") < html.index('>简介</h2>')
-    assert html.index('>入库查证</h2>') < html.index('>简介</h2>')
+    assert '>入库查证</h2>' not in html and html.count("入库时已查证") == 1
     assert re.findall(r'data-detail-section="([^"]+)"', html) == [f"deep-{i}" for i in range(1, 9)] + ["fund-hist", "all-sources"]
 
 
@@ -369,8 +370,10 @@ def test_7_backend_filters_only_funding_and_fills_each_missing_subfield_without_
     html = render_page(path, "detailHtml", "mach9")
     section = html.split('id="deep-5"', 1)[1].split("</section>", 1)[0]
     assert "此前完成合成的旧轮次" not in section and "另一个轮次" not in section
-    for field in item["missing"]:
-        assert f"{field}：来源里没写" in section
+    assert '<dl class="kv">' in section and 'class="point-label"' not in section
+    assert "<dd>种子轮 · 3400 万美元</dd>" in section
+    assert "<dd>First Round Capital</dd>" in section and "<dd>Bessemer Venture Partners</dd>" in section
+    assert "<dd>10-30</dd>" in section and "来源里没写" not in section
 
 
 def test_7_filter_preserves_input_and_fills_all_fields_when_every_point_removed():

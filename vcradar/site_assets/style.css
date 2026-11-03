@@ -26,9 +26,7 @@ body{overflow-wrap:anywhere}
 .co-head h1 a{color:var(--c-ink)}
 .co-head{padding:var(--s-4) 0 0}
 .section{background:none;min-width:0}
-.section .facts{margin-top:0}
-.section .facts dt{font:var(--t-caption)}
-.section .facts dd{font:var(--t-body)}
+.fact-card .facts{margin-top:0;border-top:0}
 .point{padding:var(--s-3) 0;border-top:1px solid var(--c-divider)}
 .point:first-of-type{border-top:0}
 .point p{font:var(--t-read);margin:var(--s-1) 0;max-width:34em}

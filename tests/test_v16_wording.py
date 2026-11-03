@@ -435,7 +435,7 @@ def test_empty_evidence_list_uses_full_company_phrase(page):
     assert site._snapshot(conn, cfg, NOW)["status"]["new_evidence"] == []
 
 
-def test_legacy_hq_pending_header_cannot_restore_old_country(page):
+def test_legacy_hq_pending_header_uses_frozen_country_without_changing_event(page):
     from test_site_build import add_deep
     conn, cfg = page
     add_deep(conn, "word-2", "完成")
@@ -443,7 +443,8 @@ def test_legacy_hq_pending_header_cannot_restore_old_country(page):
                  (json.dumps({"country":"美国"}),))
     path = site.build_site(conn, cfg, now=NOW)
     detail = json.loads((path / "c/word-2.json").read_text())
-    assert detail["companies"][0]["header"]["country"] == "国家待确认"
+    assert detail["companies"][0]["header"]["country"] == "美国"
+    assert detail["events"][0]["country"] == "国家待确认"
     assert detail["events"][0]["status"] == "已纳入"
 
 

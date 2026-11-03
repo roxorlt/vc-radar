@@ -14,7 +14,7 @@ from test_r14m_walkthrough_round3 import detail_data, detail, ui, source, set_so
 from test_site_build import node
 
 
-DESIGN = Path("design-pack/20261103-u-round3/v17d/system")
+DESIGN = Path("design-pack/20261103-u-round4/v17e/system")
 W = wording.SITE_TEXT
 
 
@@ -87,7 +87,7 @@ def test_2_detail_block_order_and_accessible_headings(detail_data):
     positions = [html.index(marker) for marker in ('class="crumb"', 'class="co-head"', 'class="evidence"', '>简介</h2>',
                  '>关键字段</h2>', 'id="deep-1"', 'id="deep-8"', 'id="fund-hist"', 'class="diffnote"', 'id="all-sources"')]
     assert positions == sorted(positions)
-    assert html.index(">入库查证</h2>") < html.index(">简介</h2>")
+    assert ">入库查证</h2>" not in html and html.count(W["verified"]) == 1
     history = next(n for n in tree.find("section") if n.attrs.get("id") == "fund-hist")
     assert history.attrs["aria-labelledby"] == history.find("h2")[0].attrs["id"] == "h-fund-hist"
     assert history.find("h2")[0].text == "融资历史" and not history.find(cls="no")
@@ -107,12 +107,13 @@ def test_3_evidence_has_final_source_labels_original_quotes_dates_and_no_explana
     evidence.append({"field": "国家", "evidence": [deepcopy(evidence[0]["evidence"][1])]})
     html = detail(detail_data)
     tree = parse(html)
-    block = tree.find("section", "evidence")[0]
+    blocks = tree.find("section", "evidence")
+    block = blocks[0]
     heading = block.find("div", "ev-h")[0]
     assert block.attrs["aria-labelledby"] == heading.attrs["id"]
-    assert heading.find("b")[0].text == "资料有出入：金额、国家"
+    assert [block.find("b")[0].text for block in blocks] == ["资料有出入：金额", "资料有出入：国家"]
     assert heading.find("use")[0].attrs["href"] == "./icons.svg#i-info"
-    items = block.find("li")
+    items = [item for block in blocks for item in block.find("li")]
     assert len(items) == 3
     assert [item.find("span", "ev-src")[0].text for item in items] == ["synthetic.example/about", "synthetic.example", "synthetic.example"]
     assert items[0].find("q")[0].text == 'Synthetic quote with <script> and "literal text".'

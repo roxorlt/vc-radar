@@ -11,7 +11,7 @@ function filtersForRoute(hash, previous, filters) {
 function selectEvents(data, filters) {
   const allowed = new Set(data.listing);
   return data.events.filter(e => {
-    if (!allowed.has(e.id) || e.filter_reasons?.length) return false;
+    if (!allowed.has(e.id) || e.out_of_scope || e.filter_reasons?.length) return false;
     if (e.baseline_unpushed) return false;
     if (e.supplement_unsent && (filters.period !== "all" || filters.status !== "all")) return false;
     if (filters.unsentOnly && !(e.supplement_unsent && e.backfill_rank > 10)) return false;
@@ -263,9 +263,7 @@ function evidenceHtml(evidence, today = "", labels = new Map(), companyNames = [
   return evidence.map(e => `<blockquote>${esc(e.quote)}</blockquote><div class="source">${esc(W.source_label)}${external(e.url, labels.get(samePage(e.url)) || sourceLabel(e, companyNames))}<div class="muted">${esc(sourceTime(e, today))}</div></div>`).join("");
 }
 function newEvidenceHtml(evidence, today, labels, companyNames) {
-  if (!evidence.length) return "";
-  const fields = [...new Set(evidence.map(e => e.field))].join("、");
-  return `<section class="evidence" aria-labelledby="h-new-evidence"><div class="ev-h" id="h-new-evidence">${icon("info")}<b>${esc(W.evidence)}${esc(fields)}</b></div><ul>${evidence.flatMap(e => e.evidence).map(e => `<li><span class="ev-src">${external(e.url, labels.get(samePage(e.url)) || sourceLabel(e, companyNames))}</span><q>${esc(e.quote)}</q><span class="muted">${esc(sourceTime(e, today))}</span></li>`).join("")}</ul></section>`;
+  return evidence.map((entry, i) => `<section class="evidence" aria-labelledby="h-new-evidence-${i}"><div class="ev-h" id="h-new-evidence-${i}">${icon("info")}<b>${esc(W.evidence)}${esc(entry.field)}</b></div><p class="ev-vals">${esc(W.pushed_value)}${esc(entry.pushed)}；${esc(W.found_value)}${esc(entry.found)}</p><ul>${entry.evidence.map(e => `<li><span class="ev-src">${external(e.url, labels.get(samePage(e.url)) || sourceLabel(e, companyNames))}</span><q>${esc(e.quote)}</q><span class="muted">${esc(sourceTime(e, today))}</span></li>`).join("")}</ul></section>`).join("");
 }
 function fundingHistoryHtml(data, company, entities, today) {
   const events = company.history.map(id => data.events.find(e => e.id === id)).sort((a, b) =>
@@ -275,34 +273,50 @@ function fundingHistoryHtml(data, company, entities, today) {
     const noAmount = !amount || [W.amount_missing, W.undisclosed].includes(amount);
     const noRound = !e.round || [W.round_missing, W.round_pending, W.undisclosed, W.unknown].includes(e.round);
     const when = e.yc_batch ? `${e.yc_batch}（YC）` : e.date ? formatDate(e.date, today, false) : "以前";
-    return `<li class="ftl-item${e.id === company.event_id ? " is-current" : ""}${noRound ? " is-unknown" : ""}" data-event-id="${esc(e.id)}"><span class="ftl-when tnum">${esc(when)}</span><span class="ftl-dot" aria-hidden="true"></span><div class="ftl-body"><div class="ftl-what"><span class="ftl-round">${esc(noRound ? W.round_missing : e.round)}</span><span class="ftl-amt tnum${noAmount ? " is-none" : ""}">${esc(noAmount ? W.amount_missing : amount)}</span></div><p class="ftl-who">${linkedText(leadText(e), entities, "ext-link")}${e.follows?.length ? `；${linkedText(e.follows.join("、"), entities, "ext-link")} ${esc(W.follow)}` : ""}</p></div></li>`;
+    return `<li class="ftl-item${e.id === company.event_id ? " is-current" : ""}${noRound ? " is-unknown" : ""}" data-event-id="${esc(e.id)}"><span class="ftl-when tnum">${esc(when)}</span><span class="ftl-dot" aria-hidden="true"></span><div class="ftl-body"><div class="ftl-what"><span class="ftl-round">${esc(noRound ? W.round_missing : roundText(e))}</span><span class="ftl-amt tnum${noAmount ? " is-none" : ""}">${esc(noAmount ? W.amount_missing : amount)}</span></div><p class="ftl-who">${linkedText(leadText(e), entities, "ext-link")}${e.follows?.length ? `；${linkedText(e.follows.join("、"), entities, "ext-link")} ${esc(W.follow)}` : ""}</p></div></li>`;
   }).join("")}</ol></section>`;
 }
 function conflictsHtml(conflicts) {
   return conflicts.length ? section(W.conflicts, conflicts.map(c => `<div class="diffnote">${icon("warn")}<div><b>${esc(c.field)}</b><ul>${c.values.map(v => `<li><span class="muted">${external(v.url, v.name)}</span>：${esc(v.value)}</li>`).join("")}</ul></div></div>`).join("")) : "";
 }
-function deepHtml(deep, today = "", labels = new Map(), companyNames = []) {
+function fundingHtml(event, today) {
+  const values = [[W.current_round, `${roundText(event)} · ${event.amount || W.amount_missing}`],
+    [W.lead, event.leads.length ? event.leads.join("、") : W.missing],
+    [W.follow, event.follows.length ? event.follows.join("、") : W.missing],
+    [W.date, event.date ? formatDate(event.date, today, false) : W.missing]];
+  return `<dl class="kv">${values.map(([key, value]) => `<dt>${esc(key)}</dt><dd>${esc(value)}</dd>`).join("")}</dl>`;
+}
+function deepHtml(deep, event, today = "", labels = new Map(), companyNames = []) {
   if (deep.status === W.skipped) return "";
   if (deep.status !== "完成") {
     const message = deep.status === W.absent ? W.deep_absent : deep.status === W.failed ? W.deep_failed : W.deep_pending;
     if (message === W.deep_pending) return section(W.deep, `<div class="sec-pending"><p class="pending-note" role="status">${icon("loading")}${esc(message)}</p><div class="deep-skeleton" aria-hidden="true">${Array.from({length: 8}, () => '<div class="skl-section"><div class="skl skl-title"></div><div class="skl skl-line"></div><div class="skl skl-line"></div></div>').join("")}</div></div>`);
     return section(W.deep, `<div class="sec-nodeep"><p class="nodeep-note" role="status">${icon("info")}${esc(message)}</p></div>`);
   }
-  return deep.items.map((item, i) => section(item.name, (item.points.length ? item.points.map(p => `<div class="point"><div class="point-label">${esc(W.point)}</div><p>${linkedText(p.text, [...deep.entities, ...p.entities])}</p>${p.evidence.length ? `<div class="point-label">${esc(W.quote)}</div>${evidenceHtml(p.evidence, today, labels, companyNames)}` : `<p class="muted">${esc(W.missing)}</p>`}</div>`).join("") : `<p>${esc(W.missing)}</p>`) + item.missing.map(m => `<p>${esc(m)}：${esc(W.missing)}</p>`).join(""), i + 1, `deep-${i + 1}`)).join("");
+  return deep.items.map((item, i) => section(item.name, i === 4 ? fundingHtml(event, today) : (item.points.length ? item.points.map(p => `<div class="point"><div class="point-label">${esc(W.point)}</div><p>${linkedText(p.text, [...deep.entities, ...p.entities])}</p>${p.evidence.length ? `<div class="point-label">${esc(W.quote)}</div>${evidenceHtml(p.evidence, today, labels, companyNames)}` : `<p class="muted">${esc(W.missing)}</p>`}</div>`).join("") : `<p>${esc(W.missing)}</p>`) + item.missing.map(m => `<p>${esc(m)}：${esc(W.missing)}</p>`).join(""), i + 1, `deep-${i + 1}`)).join("");
+}
+function roundText(event, original = false) {
+  const round = event.round || W.round_pending, text = String(event.round_text || "").trim();
+  return original && !event.out_of_scope && !round.startsWith(W.out_of_scope) && text &&
+    !/[\u3400-\u9fff]/.test(text) && text.toLowerCase() !== round.trim().toLowerCase() ? `${round}（原文 ${text}）` : round;
 }
 function keyFieldsHtml(event, entities, baseline = false, verification = [], website = "", today = "") {
   const amount = String(event.amount || "").trim();
-  const round = event.round || W.round_pending, original = String(event.round_text || "").trim();
-  const roundText = original && original.toLowerCase() !== round.trim().toLowerCase() ? `${round} · ${original}` : round;
-  const funding = (amount && !/未披露/.test(amount) ? `<div>${linkedText(amount, entities)}</div>` : "") +
-    `<div class="muted">${esc(roundText)}</div>` +
-    (event.leads.length ? `<div>${esc(W.lead)}：${linkedText(event.leads.length === 1 && event.leads[0] === "Y Combinator" ? leadText(event) : event.leads.join("、"), entities)}</div>` : "") +
-    (event.follows.length ? `<div>${esc(W.follow)}：${linkedText(event.follows.join("、"), entities)}</div>` : "");
+  const hasAmount = amount && !/未披露/.test(amount) && ![W.missing, W.unknown].includes(amount);
+  const round = String(event.round || "").trim();
+  const hasRound = round && ![W.round_pending, W.round_missing, W.undisclosed, W.missing, W.unknown].includes(round);
+  const lines = [];
+  if (hasAmount) lines.push(linkedText(amount, entities));
+  if (hasRound) lines.push(esc(roundText(event, true)));
+  if (event.leads.length) lines.push(`${esc(W.lead)}：${linkedText(event.leads.length === 1 && event.leads[0] === "Y Combinator" ? leadText(event) : event.leads.join("、"), entities)}`);
+  if (event.follows.length) lines.push(`${esc(W.follow)}：${linkedText(event.follows.join("、"), entities)}`);
+  const funding = lines.map((line, i) => i ? `<small>${line}</small>` : line).join("");
   const location = [event.country, event.city, event.country_basis].filter(v => v && v !== W.city_pending && v !== W.missing).join(" · ");
-  const values = [[W.current_round, funding]];
+  const values = funding ? [[W.current_round, funding]] : [];
   if (event.country) values.push([W.country_basis, location]);
   if (website) values.push([W.homepage, website]);
   for (const [key, value] of [[W.date, event.date], [W.first_seen, event.first_seen], [W.push_date, event.push_date]]) {
+    if (key === W.push_date && (baseline || event.baseline_unpushed || event.out_of_scope || event.filter_reasons?.length || event.round?.startsWith(W.out_of_scope))) continue;
     if (value) values.push([key, formatDate(value, today, false)]);
   }
   const notes = verification.map(b => {
@@ -310,7 +324,7 @@ function keyFieldsHtml(event, entities, baseline = false, verification = [], web
     return `<p class="facts-note">${b.text === W.verified ? "" : "<b>待确认：</b>"}${field ? `${esc(field)} · ` : ""}${esc(b.text)}${b.reason ? ` · ${esc(b.reason)}` : ""}${b.urls.map((url, i) => ` ${external(url, b.quotes[i] || W.source_label)}`).join("")}</p>`;
   }).join("");
   return section(W.key_fields, `<div class="card fact-card"><dl class="facts">${values.map(([k, v]) =>
-    `<div><dt>${esc(k)}</dt><dd>${k === W.current_round ? v : k === W.homepage ? external(v, W.homepage, "ext-link", true) : linkedText(v, entities)}</dd></div>`
+    `<div${k === W.current_round && hasAmount ? ' class="amt"' : ""}><dt>${esc(k)}</dt><dd>${k === W.current_round ? v : k === W.homepage ? external(v, W.homepage, "ext-link", true) : linkedText(v, entities)}</dd></div>`
   ).join("")}</dl>${notes}</div>`);
 }
 function verifySourcesHtml(company) {
@@ -341,15 +355,13 @@ function detailHtml(data, id) {
   const entities = [{name:company.header.name, url:company.website}, ...deep.entities, ...deep.items.flatMap(i => i.points.flatMap(p => p.entities))];
   let html = companyHeadHtml(company, nav);
   if (company.identity_note) html += `<div class="alert">${esc(company.identity_note)}</div>`;
-  const checks = (company.verification || []).filter(v => !v.correction);
-  if (checks.length) html += section(W.verification, checks.map(v => `<div class="mini">${esc(v.field)} · ${esc(v.text)}${v.reason ? ` · ${esc(v.reason)}` : ""}${v.urls.map((url, i) => `<p>${external(url, v.quotes[i] || W.source_label)}</p>`).join("")}</div>`).join(""));
   html += newEvidenceHtml(deep.new_evidence, today, labels, companyNames);
   html += section(W.description, `<p>${linkedText(company.summary || W.missing, entities)}</p>`);
   const sources = section(W.all_sources, sourceList(company.sources, today, labels, companyNames), null, "all-sources") + verifySourcesHtml(company);
   if (deep.status !== W.skipped) {
     html += keyFieldsHtml(event, entities, false, company.verification, company.website, today);
     html += `<div class="detail v2"><nav class="toc" aria-label="${esc(W.deep)}"${deep.status !== "完成" ? " hidden" : ""}>${deep.items.map((item, i) => `<a href="${companyRoute(id)}" data-detail-section="deep-${i + 1}"${i === 0 ? ' aria-current="true"' : ""}>${esc(item.name)}</a>`).join("")}<a href="${companyRoute(id)}" data-detail-section="fund-hist">${esc(W.history)}</a><a href="${companyRoute(id)}" data-detail-section="all-sources">${esc(W.all_sources)}</a></nav><div class="detail-content">`;
-    html += deepHtml(deep, today, labels, companyNames);
+    html += deepHtml(deep, event, today, labels, companyNames);
     html += fundingHistoryHtml(data, company, entities, today);
     html += conflictsHtml(company.conflicts);
     return html + sources + "</div></div>";

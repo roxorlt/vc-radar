@@ -1153,3 +1153,4 @@ a.cite::before { content: ""; position: absolute; inset: -3px -2px; }
 .cpop-title { margin-top: 0; }
 .cpop-meta { display: block; margin: 0 0 var(--s-2); color: var(--c-muted); font: var(--t-caption); font-variant-numeric: tabular-nums; }
 .cpop.is-loading .cpop-meta { color: transparent; border-radius: var(--r-xs); background: var(--c-sunken); }
+.ev-vals { margin-top: var(--s-2); color: var(--c-ink); font: var(--t-body); }
