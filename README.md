@@ -44,6 +44,7 @@ pip install -r requirements.txt     # 只装测试用的 pytest
 
 ```bash
 python -m vcradar --test --dry-run          # 测试运行：写测试库和 outbox-test，不影响正式数据
+python -m vcradar --test --extended-sources --dry-run   # 同时启用扩展公开信源（PR Newswire / Pulse 2.0 / VentureBeat / GeekWire / TechStartups / Crunchbase AI）
 python -m vcradar --test --fixture tests/fixtures/sources/manifest.json --dry-run   # 用本地固定返回离线跑一遍
 python -m vcradar --build-site              # 只读数据库，生成回看页
 python -m vcradar --preview-push            # 预览推送文字

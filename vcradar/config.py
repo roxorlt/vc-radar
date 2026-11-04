@@ -59,6 +59,7 @@ class Config:
         '"{name}" {context} about contact location {exclude}',
     ])
     homepage_check_file: Path = Path(__file__).resolve().parent.parent / "config/homepage-check.json"
+    enable_extended_sources: bool = False
 
     def __post_init__(self) -> None:
         validate_link_path_template(self.link_path_template)
@@ -121,7 +122,7 @@ def is_test_run(args, cfg: Config | None = None, *, exclude: str | None = None) 
     """按 PRD 6.6 唯一的 A 类表判断测试运行，各入口共用。"""
     flags = ("fixture", "dry_run", "search_fixtures", "rates_file", "rates_fail", "now",
              "links_file", "assume_review_site_passed", "replay", "no_verify",
-             "prod_rules", "reset_test_db")
+             "prod_rules", "reset_test_db", "test")
     return bool((cfg is not None and cfg.test_mode) or getattr(args, "to", None) == "test"
                 or any(getattr(args, flag, None) is not None if flag == "now" else bool(getattr(args, flag, False))
                        for flag in flags if flag != exclude))

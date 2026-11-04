@@ -2,6 +2,7 @@
 from datetime import timedelta
 from hashlib import sha1, sha256
 import json
+import re
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 
@@ -268,7 +269,7 @@ def test_41_7_step_deadline_preserves_prior_candidate_for_next_day(env, tmp_path
 
 
 def test_41_8_status_snapshot_page_links_wording_and_research_unchanged(env, tmp_path):
-    from test_site_build import render_page
+    from test_site_build import render_page, html_text
     conn, cfg = env
     research = Config().links_file
     before = sha256((research.read_bytes() if research.exists() else b"[]")).hexdigest()
@@ -286,15 +287,20 @@ def test_41_8_status_snapshot_page_links_wording_and_research_unchanged(env, tmp
     conn.execute("INSERT INTO verify_search(company_id,run_date,requested_at,query,cost,model_cost,purpose) VALUES (?,'2026-10-31','2026-10-31 08:40:00','ordinary',.01,.0035,'查证')", (a,))
     conn.commit()
     path = site.build_site(conn, cfg, now=clock.now(), out_dir=tmp_path / "site")
-    status_html = render_page(path, "sourcesHtml")
+    status_html = render_page(path, "weekHtml")
     detail_a = render_page(path, "detailHtml", a)
     detail_b = render_page(path, "detailHtml", b)
     data = DigestData(clock.now().date(), None, clock.now(), "有新增", cards=listing["cards"])
     text = render.render_push(data, links_file=cfg.links_file)
-    assert "本期核到 1 / 2 家" in status_html and 'class="alert"' in status_html
-    assert "官网未核到 1 家：Beech" in status_html and "今天 1 次 · 本月 ¥0.0050" in status_html
-    assert 'href="https://ash.test/"' in detail_a and ">官网</a>" in detail_a
-    assert ">官网</a>" not in detail_b and "[官网](https://ash.test/)" in text
+    internal = site._snapshot(conn, cfg, clock.now())["status"]["homepage"]
+    assert internal["found"] == 1 and internal["total"] == 2 and internal["low"]
+    assert [c["name"] for c in internal["missing"]] == ["Beech"] and internal["searches"] == 1
+    assert "本期核到" not in status_html and "官网未核到" not in status_html
+    assert "今天 1 次" not in status_html
+    links_a = [html_text(label) for label in re.findall(r"<a\b[^>]*>(.*?)</a>", detail_a, re.S)]
+    links_b = [html_text(label) for label in re.findall(r"<a\b[^>]*>(.*?)</a>", detail_b, re.S)]
+    assert 'href="https://ash.test/"' in detail_a and "官网" in links_a
+    assert "官网" not in links_b and "[官网](https://ash.test/)" in text
     for word in ("脚本", "自动", "核对", "弱证据", "官网未知"):
         assert word in wording.BANNED_OLD_WORDS
         assert word not in status_html + detail_a + detail_b + text

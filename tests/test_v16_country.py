@@ -258,7 +258,8 @@ def test_replay_model_path_includes_foreign_company(tmp_path, monkeypatch, capsy
     args = cli.parse_args(["--replay", str(fixture), "--live-model", "--date", "2026-11-06"])
     from vcradar import replay
     assert replay.run_replay(cfg, args, pipeline.Clock(NOW.date(), NOW.timetz())) == 0
-    assert client.calls == 1 and "本周共 1 家" in capsys.readouterr().out
+    output = capsys.readouterr().out
+    assert client.calls == 1 and "1. Composal｜" in output and "本周共" not in output
 
 
 def test_site_exports_country_and_legacy_lists_match_display(conn, tmp_path, monkeypatch):
@@ -279,17 +280,19 @@ def test_site_exports_country_and_legacy_lists_match_display(conn, tmp_path, mon
     assert "hq_pending" not in data["week"]
     assert set(data["week"]["cards"]) == {uk, pending}
     assert data["week"]["filtered"] == [other]
-    assert data["week"]["filtered_counts"] == {"B 轮及以后": 1}
+    internal = site._snapshot(conn, Config(state_dir=tmp_path, test_mode=True), NOW)
+    assert internal["week"]["filtered_counts"] == {"B 轮及以后": 1}
+    assert "filtered_counts" not in data["week"]
     assert hidden not in data["listing"] and hidden not in data["week"]["event_ids"]
     company = next(c for c in data["companies"] if c["id"] == "composal")
     assert company["country"] == "英国" and "London" in company["country_basis"]
     detail = json.loads((path / "c/composal.json").read_text())
     assert detail["events"][0]["country"] == "英国"
-    assert data["status"]["pending_ratios"]["country"] == {"count": 1, "percent": 50.0}
+    assert internal["status"]["pending_ratios"]["country"] == {"count": 1, "percent": 50.0}
     week = render_page(path, "weekHtml")
-    assert "上次推送后共 2 家" in week
+    assert "上次推送后共" not in week
     assert "英国" in week and "总部待核" not in week and "总部非美国" not in week
-    assert "已过滤 1 家" in week
+    assert "已过滤" not in week and "<summary><span>不在收录范围</span>" in week
     html = render_page(path, "detailHtml", "composal")
     assert "国家和依据</dt>" in html and "英国 · 伦敦 · " in html and "London" in html
     assert "总部</dt>" not in html and "总部依据</dt>" not in html

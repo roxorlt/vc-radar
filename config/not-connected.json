@@ -1,0 +1,124 @@
+{
+  "sources": [
+    {
+      "name": "Axios Pro Rata 邮件",
+      "category": "邮件通讯",
+      "feasible": true,
+      "reason": "网页端由反爬挑战页拦截且 robots 限制，需通过独立收件箱（IMAP 或邮件转发钩子）接入"
+    },
+    {
+      "name": "Term Sheet 邮件",
+      "category": "邮件通讯",
+      "feasible": true,
+      "reason": "当前使用网页版作为主源，邮件版可作为备用双通道通过独立收件箱接入"
+    },
+    {
+      "name": "StrictlyVC 邮件",
+      "category": "邮件通讯",
+      "feasible": true,
+      "reason": "当前使用站点地图网页版抓取，邮件备份尚未接入收件箱"
+    },
+    {
+      "name": "Crunchbase Daily 邮件",
+      "category": "邮件通讯",
+      "feasible": true,
+      "reason": "已有 Crunchbase News 四个公开 RSS 栏目覆盖，邮件日报尚未接入收件箱"
+    },
+    {
+      "name": "PitchBook The Daily Pitch 邮件",
+      "category": "邮件通讯",
+      "feasible": true,
+      "reason": "尚未配置免费邮件订阅收件箱"
+    },
+    {
+      "name": "SEC Form D",
+      "category": "公开监管披露",
+      "feasible": true,
+      "reason": "SEC EDGAR 要求带联系标识的专属 User-Agent，且原始申报含大量房产/并购基金与老股，仅适合作为交叉核验辅助信号"
+    },
+    {
+      "name": "Product Hunt",
+      "category": "公开产品社区",
+      "feasible": true,
+      "reason": "公开 Atom 源可读取新上线产品，但几乎不含轮次与融资金额，仅适合作为早期产品线索池"
+    },
+    {
+      "name": "The Information 标题",
+      "category": "付费媒体公开摘要",
+      "feasible": false,
+      "reason": "公开流仅含标题且正文付费墙限制，无法满足逐字原句抽取契约"
+    },
+    {
+      "name": "Google News",
+      "category": "聚合搜索",
+      "feasible": false,
+      "reason": "聚合跳转链接含大量转载噪音且部分跳转受限，不如直连一手媒体与通讯社稳定"
+    },
+    {
+      "name": "基金官网动态",
+      "category": "机构官网",
+      "feasible": true,
+      "reason": "各家早期基金（如 a16z、Benchmark、Sequoia）博客结构各异且发文稀疏，需按机构逐一配置解析规则"
+    },
+    {
+      "name": "X",
+      "category": "社交平台",
+      "feasible": false,
+      "reason": "公开页面受登录墙与 robots 限制，官方搜索接口需商业付费配额"
+    },
+    {
+      "name": "Wellfound",
+      "category": "创投目录",
+      "feasible": false,
+      "reason": "反爬拦截（HTTP 403）且已转型招聘平台，不再公开披露实时融资轮次数据"
+    },
+    {
+      "name": "Inside",
+      "category": "邮件通讯",
+      "feasible": false,
+      "reason": "相关创投简报栏目已停刊"
+    },
+    {
+      "name": "Crunchbase 数据库",
+      "category": "商业数据库",
+      "feasible": false,
+      "reason": "商业付费 API，超出公开免费信息采集边界"
+    },
+    {
+      "name": "PitchBook",
+      "category": "商业数据库",
+      "feasible": false,
+      "reason": "商业付费终端，超出公开免费信息采集边界"
+    },
+    {
+      "name": "Dealroom",
+      "category": "商业数据库",
+      "feasible": false,
+      "reason": "商业付费 API，超出公开免费信息采集边界"
+    },
+    {
+      "name": "Tracxn",
+      "category": "商业数据库",
+      "feasible": false,
+      "reason": "商业付费数据库，超出公开免费信息采集边界"
+    },
+    {
+      "name": "The Information 正文",
+      "category": "商业付费媒体",
+      "feasible": false,
+      "reason": "付费订阅内容，遵守版权与公开抓取边界不予抓取"
+    },
+    {
+      "name": "Axios Pro Deals",
+      "category": "商业付费媒体",
+      "feasible": false,
+      "reason": "专业版付费订阅内容，不予抓取"
+    },
+    {
+      "name": "Product Hunt 商业数据",
+      "category": "商业付费接口",
+      "feasible": false,
+      "reason": "商业增值数据包，本期不采购"
+    }
+  ]
+}

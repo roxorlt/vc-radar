@@ -1,6 +1,6 @@
 """从只读业务数据生成回看站点；所有页面资源均随快照保存。
 
-data.json 只含列表索引、本周名单和状态；纯基线保留详情定位和公司名。
+data.json 只含列表索引和本周名单；纯基线保留详情定位和公司名。
 c/<id>.json 由详情路由按需读取；纯基线详情只含关键字段和来源。
 """
 from __future__ import annotations
@@ -18,11 +18,13 @@ import tempfile
 from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 from uuid import uuid4
 
-from . import cal, fx, guard, scan, wording, placenames
+from . import cal, fx, guard, scan, wording, placenames, db, outbox
+from .fetcher import merge_missed_ranges
 from .config import BJ, ET, Config, effective_links_file
 from .labels import overall
-from .render import push_first_lines, read_link_records, official_links
-from .sources.registry import P0_SOURCES
+from .render import push_first_lines, read_link_records, official_links, sort_cards, fetch_warning, warning_from_text
+from .models import Card, DigestData, ErrorType, SourceStatusLine
+from .sources.registry import DISPLAY_ORDER, P0_SOURCES, display_name, display_rank, name_for_url
 
 
 ASSETS = Path(__file__).with_name("site_assets")
@@ -31,29 +33,25 @@ LINK_RECORDS = Config().links_file
 ITEM_NAMES = ("产品是什么", "解决谁的什么问题", "怎么赚钱", "团队", "融资", "竞品", "标签依据", "风险")
 MAX_DATA_BYTES = 500_000
 MARKS = wording.MARK_ORDER
-SOURCE_NAMES = ("TechCrunch", "Crunchbase News", "YC Launches", "YC 公司目录",
-                "Launch HN", "StrictlyVC", "AlleyWatch", "Term Sheet")
+SOURCE_NAMES = DISPLAY_ORDER
 FIELD_NAMES = {"hq": "国家", "country": "国家", "总部": "国家", "round": "轮次", "round_norm": "轮次", "amount": "金额",
                "amount_text": "金额", "website": "官网", "ai": "AI相关", "ai_label": "AI相关",
                "social": "社交/社群相关", "social_label": "社交/社群相关"}
+FUNDING_FIELDS = {"round": "轮次", "amount": "金额", "leads": "领投", "follows": "跟投", "date": "日期"}
+PAST_FUNDING = re.compile(r"\b(?:previous(?:ly)?|earlier|prior|last\s+year)\b|之前|此前|上一轮|以前|早前|先前|上轮|前一轮|去年", re.I)
 ERROR_TEXT = wording.SOURCE_ERRORS
 
-NOT_CONNECTED = (
-    ("Axios Pro Rata 邮件", "网页限制访问，邮件尚未接入"),
-    ("Term Sheet 邮件", "邮件尚未接入"), ("StrictlyVC 邮件", "邮件备份尚未接入"),
-    ("Crunchbase Daily 邮件", "邮件尚未接入"), ("X", "账号搜索尚未接入"),
-    ("Pulse 2.0", "尚未接入"), ("PR Newswire Venture Capital", "尚未接入"),
-    ("Crunchbase News AI 栏目", "与现有栏目重复较多，后续接入"),
-    ("SEC Form D", "无关信息较多，后续接入"), ("Product Hunt", "融资信息较少，后续接入"),
-    ("The Information 标题", "信息较少，后续接入"), ("VentureBeat", "与现有来源网站重复较多，后续接入"),
-    ("Google News", "无关信息较多，后续接入"), ("基金官网动态", "信息较少，后续接入"),
-    ("GeekWire", "信息较少，后续接入"), ("TechStartups", "与现有来源网站重复较多，后续接入"),
-    ("PitchBook The Daily Pitch 邮件", "尚未订阅"), ("Inside", "已停刊"),
-    ("Wellfound", "限制访问，且没有融资数据"), ("Crunchbase 数据库", "本期不购买"),
-    ("PitchBook", "本期不购买"), ("Dealroom", "本期不购买"), ("Tracxn", "本期不购买"),
-    ("The Information 正文", "本期不购买"), ("Axios Pro Deals", "本期不购买"),
-    ("Product Hunt 商业数据", "本期不购买"),
-)
+def _load_not_connected() -> tuple[tuple[str, str], ...]:
+    path = Path(__file__).resolve().parent.parent / "config" / "not-connected.json"
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        entries = payload.get("sources", payload) if isinstance(payload, dict) else payload
+        return tuple((str(item["name"]), str(item["reason"])) for item in entries if item.get("name") and item.get("reason"))
+    except (OSError, ValueError, TypeError, KeyError):
+        return ()
+
+
+NOT_CONNECTED = _load_not_connected()
 
 
 def _json(value, default):
@@ -98,9 +96,7 @@ def _object_url(value, trusted: set[str]) -> str:
 
 
 def _source_order(source: dict) -> tuple:
-    name = source["name"]
-    order = next((i for i, n in enumerate(SOURCE_NAMES) if name.startswith(n)), len(SOURCE_NAMES))
-    return order, source["first_seen_at"] or "", source["raw_item_id"]
+    return display_rank(source["source_id"]), source["first_seen_at"] or "", source["raw_item_id"]
 
 
 def _tags(company: dict) -> list[str]:
@@ -165,8 +161,10 @@ def _sources(conn) -> dict[int, list[dict]]:
         stamp = _moment(row["first_seen_at"] if row["source_id"] == "yc_directory"
                         else row["published_at"] or row["first_seen_at"])
         result[row["event_id"]].append({
-            "raw_item_id": row["raw_item_id"], "name": row["source_name"], "url": row["url"],
+            "raw_item_id": row["raw_item_id"], "source_id": row["source_id"],
+            "name": display_name(row["source_id"]), "origin_name": row["source_name"], "url": row["url"],
             "title": row["title"], "beijing_at": _stamp(stamp), "date": stamp.date().isoformat(),
+            "published_at": _stamp(row["published_at"]),
             "original_date_et": row["original_date_et"] or (
                 _moment(row["published_at"]).astimezone(ET).date().isoformat() if row["published_at"] else None),
             "first_seen_at": _stamp(extraction.get("_source_first_seen_at") or row["first_seen_at"]),
@@ -189,14 +187,13 @@ def _collapsed(conn) -> set[int]:
     return set().union(*(events[k] for k, v in groups.items() if len(v) > 30))
 
 
-def _event_key(event: dict) -> tuple:
-    amount = event["amount_usd"]
-    bucket = (4 if event["amount_status"] == "金额待确认" else
-              1 if event["amount_status"] == "金额待核" else
-              2 if event["amount_status"] in {"币种待确认", "暂未换算"} else 3 if amount is None else 0)
-    return (bucket, -amount if bucket < 2 and amount is not None else 0,
-            "新一轮" not in event["marks"], "大额" not in event["marks"],
-            event["first_ingested_at"], event["name"].casefold(), event["id"])
+def _sorted_events(events: list[dict]) -> list[dict]:
+    # 以事件编号定位，复用推送的全部排序规则，避免页面和推送各维护一份。
+    by_id = {str(e["id"]): e for e in events}
+    cards = [Card(str(e["id"]), e["name"], e["marks"], e["round"], e["amount"], "", "", "", "", [],
+                  amount_usd=e["amount_usd"], amount_status=e["amount_status"]) for e in events]
+    first_seen = {str(e["id"]): _moment(e["first_ingested_at"]) for e in events}
+    return [by_id[c.company_id] for c in sort_cards(cards, first_seen=first_seen)]
 
 
 def _city(company: dict) -> str:
@@ -218,6 +215,48 @@ def _display_header(header: dict) -> dict:
             "tags": [wording.display_text(t) for t in header["tags"]]}
 
 
+def _round_display(value: str, reasons=(), *, outside=False) -> str:
+    if outside or value == "过滤":
+        return wording.SITE_TEXT["out_of_scope"] + (f" · {reasons[0]}" if reasons else "")
+    return wording.SITE_TEXT["round_pending"] if value == "待核" or not value else value
+
+
+def _basis_is_sentence(text: str) -> bool:
+    return (len(text) > 60 or bool(re.search(r"\b(?:that|raised|startup|company|firm|based|we|is|has)\b|[。！？!?]", text, re.I))
+            or bool(re.search(r"[a-z]{2,}\.(?:\s|$)|\b[A-Za-z]+(?:[\s-]+[A-Za-z]+){5,}\b", text)))
+
+
+def _short_location(text: str) -> str:
+    location = scan._headquarters_location(text)
+    if not location:
+        match = re.search(r"\b([A-Z][\w'.-]*(?:\s+[A-Z][\w'.-]*)*(?:,\s*[A-Z][\w'.-]*(?:\s+[A-Z][\w'.-]*)*)*)[-–—]based\b", text)
+        if not match:
+            match = re.search(r"\bbased\s+in\s+([^;。\n]+)", text, re.I)
+        location = match[1] if match else ""
+    return re.split(r",?\s+(?:that|which|with|and|but)\b|[。!?]|\.\s", location, maxsplit=1, flags=re.I)[0].strip(" .,，")
+
+
+def _country_basis(company: dict, sources: list[dict]) -> str:
+    basis = (company.get("hq_basis") or "").strip()
+
+    def concise(text, *, conflict=False):
+        text = text.strip()
+        if not _basis_is_sentence(text):
+            return text
+        if conflict:
+            location = _short_location(text)
+            if location and not _basis_is_sentence(location):
+                return placenames.normalize_place_text(location, protected_names=())[0]
+        source = next((source for source in sources if text in {
+            str(source["extraction"].get(key) or "").strip() for key in ("hq_quote", "_hq_basis")}), sources[0] if sources else None)
+        name = (display_name(source["source_id"]) if source.get("source_id") else source["name"]) if source else "来源"
+        return f"{name} 报道"
+
+    if basis.startswith("国家来源有冲突："):
+        return "国家来源有冲突：" + "；".join(concise(part, conflict=True) for part in basis.split("：", 1)[1].split("；"))
+    return concise(basis)
+
+
 def _event(row: dict, company: dict, sources: list[dict], collapsed: set[int], next_label: str, snapshot=None) -> dict:
     from .verify import valid_investor
     first = _moment(row["first_ingested_at"] or row["first_seen"])
@@ -237,9 +276,8 @@ def _event(row: dict, company: dict, sources: list[dict], collapsed: set[int], n
     else:
         amount = row["amount_usd"] if row["fx_source"] or row["amount_currency"] else scan.parse_amount_usd(amount_text)
     label = fx.format_amount_text(row["amount_text"]) if row["amount_status"] == "金额待核" and " 写 " in (row["amount_text"] or "") else fx.format_amount(row, row["amount_text"])
-    if (row["amount_status"] == "金额待核" and sources and " 写 " in (row["amount_text"] or "")
-            and all("_amount_fx" in s["extraction"] for s in sources)):
-        displayed = [s for s in sources if f"{s['name']} 写 " in row["amount_text"]]
+    if row["amount_status"] == "金额待核" and sources and " 写 " in (row["amount_text"] or ""):
+        displayed = [s for s in sources if f"{s['origin_name']} 写 " in row["amount_text"]]
         if displayed:
             label = "，".join(f"{s['name']} 写 " + fx.format_amount(
                 s["extraction"].get("_amount_fx") or fx.convert_amount(s["extraction"].get("amount_text")).to_dict(),
@@ -247,6 +285,8 @@ def _event(row: dict, company: dict, sources: list[dict], collapsed: set[int], n
     stored_reasons = _json(row["filter_reasons_json"], [])
     reasons = [wording.filter_reason(reason, round_text=row["round_text"] or "",
                    extractions=[s["extraction"] for s in sources]) for reason in scan.display_filter_reasons(stored_reasons)]
+    reasons = [reason for reason in reasons if reason]
+    outside = bool(reasons) or row["round_norm"] == "过滤"
     legacy_country_filtered = bool(stored_reasons) and not reasons
     marks = set(_json(row["marks_json"], []))
     if row["amount_status"] in {"币种待确认", "暂未换算", "金额待确认"}:
@@ -254,7 +294,7 @@ def _event(row: dict, company: dict, sources: list[dict], collapsed: set[int], n
         marks.discard("金额待核")
     if row["amount_status"] == "金额待核":
         marks.add("金额待核")
-    state = ("已过滤" if stored_reasons else "已纳入" if company["status"] == "总部待核"
+    state = ("已过滤" if outside or stored_reasons else "已纳入" if company["status"] == "总部待核"
              else "轮次待核" if row["round_norm"] == "待核" or company["status"] == "轮次待核" else "已纳入")
     backfill_event = bool(row.get("original_first_ingested_at") and company.get("backfill") and not row.get("backfill_normal"))
     supplement_unsent = backfill_event and company.get("backfill") == "补充未推送"
@@ -265,7 +305,12 @@ def _event(row: dict, company: dict, sources: list[dict], collapsed: set[int], n
         "summary": fx.format_amount_text(placenames.normalize_place_text(company["summary"],
             protected_names=company.get("_place_names", placenames.protected_names(company, [row])))[0], snapshot) if company["summary"] else "",
         "_place_names": company.get("_place_names", placenames.protected_names(company, [row])),
-        "round": row["round_norm"], "round_text": row["round_text"],
+        "round": _round_display(row["round_norm"], reasons, outside=outside), "round_text": row["round_text"],
+        "out_of_scope": outside, "_round_pending": row["round_norm"] == "待核",
+        "_ai": company["ai_label"], "_social": company["social_label"],
+        "_amount_snapshot": snapshot or ({"base": "USD", "rates": {row["amount_currency"]: 1 / row["fx_rate"]},
+            "date": row["fx_date"], "source": row["fx_source"], "stale": row["fx_stale"]}
+            if row.get("amount_currency") and row.get("fx_rate") else {}),
         "amount": label if row["amount_status"] != "未披露" else "金额未披露",
         "amount_status": row["amount_status"], "amount_usd": amount,
         "leads": [v for v in _json(row["leads_json"], []) if valid_investor(v)],
@@ -273,20 +318,52 @@ def _event(row: dict, company: dict, sources: list[dict], collapsed: set[int], n
         "hq": company["hq"], "hq_basis": company["hq_basis"], "date": row["event_date"],
         "country": scan.COUNTRY_PENDING if company["status"] == "总部待核" else company["country"],
         "legacy_country_pending": company["status"] == "总部待核",
-        "country_basis": company["hq_basis"], "city": _city(company),
+        "country_basis": _country_basis(company, sources), "city": _city(company),
         "backfill": wording.SITE_TEXT["supplement"] if company.get("backfill") == "首期漏掉" else "",
         "backfill_event": backfill_event, "supplement_unsent": supplement_unsent,
         "backfill_rank": company.get("backfill_rank"),
-        "company_status": "已纳入" if company["status"] == "总部待核" else wording.display_text(company["status"]),
+        "company_status": wording.STATUS_LABELS.get(company["status"], wording.display_text(company["status"])),
         "admitted": company["status"] in {"已纳入", "总部待核"} and company.get("backfill") != "补充未推送",
         "legacy_country_filtered": legacy_country_filtered,
         "first_seen": company["first_seen"], "first_ingested_at": _stamp(first),
         "push_date": row["push_date"], "next_push_label": next_label if not row["push_date"] and not supplement_unsent else None,
         "baseline_unpushed": bool(row["baseline_unpushed"]), "yc_batch": row["yc_batch"],
         "marks": [m for m in MARKS if m in marks], "tags": _tags(company),
-        "status": state, "pending_reason": company["pending_reason"] or ("来源没写轮次" if state == "轮次待核" else ""),
+        "status": state, "pending_reason": "" if supplement_unsent else company["pending_reason"] or ("来源没写轮次" if state == "轮次待核" else ""),
         "filter_reasons": reasons, "sources": sources, "collapsed": row["id"] in collapsed,
     }
+
+
+def _same_page(url: str) -> str:
+    """比较两个地址是否同一页面：不分 http/https、www.、末尾斜杠。"""
+    try:
+        parts = urlsplit(url or "")
+    except ValueError:
+        return url or ""
+    host = (parts.hostname or "").lower()
+    host = host[4:] if host.startswith("www.") else host
+    return f"{host}{parts.path.rstrip('/')}" + (f"?{parts.query}" if parts.query else "")
+
+
+def _name_pages(pages: dict[str, dict], sources: list[dict]) -> None:
+    """深度解读读过的页面补上信源名：与卡片来源同一页时沿用那条来源，否则按信源表认，认不出保留域名。"""
+    by_page = {}
+    for source in sources:
+        by_page.setdefault(_same_page(source.get("url", "")), source)
+    for page in pages.values():
+        source = by_page.get(_same_page(page.get("url", "")))
+        if source:
+            page.update(name=source["name"], title=source.get("title"), published_at=source.get("published_at"),
+                        original_date_et=source.get("original_date_et"))
+        else:
+            known = page.get("name") if page.get("name") not in (None, "", "来源") else None
+            try:
+                host = (urlsplit(page.get("url", "")).hostname or "").removeprefix("www.")
+            except ValueError:
+                host = None
+            page["name"] = name_for_url(page.get("url", "")) or (known or host or "来源").removeprefix("www.")
+            page.setdefault("title", None)
+            page.setdefault("published_at", None)
 
 
 def _page_map(pages: list[dict], materials: list[dict]) -> dict[str, dict]:
@@ -313,12 +390,115 @@ def _evidence(points, pages: dict) -> list[dict]:
     return result
 
 
+def _funding_point_is_current(point: dict, event: dict) -> bool:
+    """只保留本轮融资字段及无字段泛述；原句或要点明确回溯、轮次不同的均隐藏。"""
+    field = point.get("field")
+    if field and field not in FUNDING_FIELDS:
+        return False
+    evidence = point.get("evidence") or []
+    if isinstance(evidence, dict):
+        evidence = [evidence]
+    text = " ".join(str(point.get(key) or "") for key in ("zh", "point", "text", "quote"))
+    text += " " + " ".join(str(entry.get("quote") or "") for entry in evidence)
+    if PAST_FUNDING.search(text):
+        return False
+    if field == "round" and point.get("value"):
+        return scan.normalize_round(str(point["value"])) == scan.normalize_round(event.get("round"))
+    return True
+
+
+def _current_funding_points(points: list[dict], event: dict) -> list[dict]:
+    """过滤显示数据并按 deep.py 的五个子字段补位，不修改存储结果。"""
+    kept = [point for point in points if _funding_point_is_current(point, event)]
+    present = {point.get("field") for point in kept}
+    return kept + [{"field": field, "text": wording.SITE_TEXT["missing"]}
+                   for field in FUNDING_FIELDS if field not in present]
+
+
+def _country_value(value) -> str:
+    text = str(value or "").strip()
+    if not text or text == scan.COUNTRY_PENDING:
+        return scan.COUNTRY_PENDING
+    location = _short_location(text) or text
+    # 旧地名表尚无 The Hague；这里只补任务指定的显示对照，不参与入库判定。
+    return scan._classify_location(location) or {"the hague": "荷兰"}.get(location.casefold()) or placenames.normalize_place_text(location[:60], protected_names=())[0]
+
+
+def _amount_value(value, event: dict) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return wording.SITE_TEXT["amount_missing"]
+    if "（原 " in text:
+        return fx.format_amount_text(text)
+    return fx.format_amount(fx.convert_amount(text, event.get("_amount_snapshot")), text)
+
+
+def _website_value(value) -> str:
+    text = str(value or "").strip()
+    try:
+        return (urlsplit(text if "://" in text else "https://" + text).hostname or "").lower().removeprefix("www.") or wording.SITE_TEXT["missing"]
+    except ValueError:
+        return wording.SITE_TEXT["missing"]
+
+
+def _label_value(value) -> str:
+    text = str(value if value is not None else "").strip()
+    if text.casefold() in {"是", "true", "yes", "1"}:
+        return "是"
+    if text.casefold() in {"否", "false", "no", "0"}:
+        return "否"
+    return wording.SITE_TEXT["tag_pending"]
+
+
+def _header_label(header: dict, label: str, fallback) -> str:
+    tags = {wording.display_text(tag) for tag in header["tags"]}
+    if label in tags:
+        return "是"
+    return _label_value(fallback) if wording.SITE_TEXT["tag_pending"] in tags else "否"
+
+
+def _new_evidence(entries: list[dict], event: dict, judgement: dict, pages: dict) -> list[dict]:
+    header = _frozen_header(event, judgement)
+    pushed = {
+        "国家": header["country"],
+        "轮次": _round_display(judgement.get("round", judgement.get("round_norm", event["round"])), event["filter_reasons"]),
+        "金额": judgement.get("amount_display") or (_amount_value(judgement["amount"], event) if "amount" in judgement else event["amount"]),
+        "官网": _website_value(judgement.get("website", event.get("_website"))),
+        "AI相关": _header_label(header, "AI相关", judgement.get("ai", judgement.get("ai_label", event.get("_ai") if "tags" not in judgement else None))),
+        "社交/社群相关": _header_label(header, "社交/社群相关", judgement.get("social", judgement.get("social_label", event.get("_social") if "tags" not in judgement else None))),
+    }
+    result, shown = [], set()
+    for entry in entries:
+        field = FIELD_NAMES.get(entry.get("field"), entry.get("field"))
+        if field not in pushed or field in shown:
+            continue
+        value = entry.get("value")
+        if field == "国家":
+            found = _country_value(value)
+        elif field == "轮次":
+            normalized = scan.normalize_round(str(value or ""))
+            reasons = [wording.filter_reason("轮次不在范围", round_text=str(value))] if normalized == "过滤" else []
+            found = _round_display(normalized, reasons)
+        elif field == "金额":
+            found = _amount_value(value, event)
+        elif field == "官网":
+            found = _website_value(value)
+        else:
+            found = _label_value(value)
+        if pushed[field] != found:
+            result.append({"field": field, "pushed": pushed[field], "found": found,
+                           "evidence": _evidence(entry.get("evidence", [entry]), pages)})
+            shown.add(field)
+    return result
+
+
 def _deepdive(row: dict | None, pages: list[dict], event: dict, records: list[dict], now: datetime) -> dict:
     if row is None:
         return {"status": "不做" if event["collapsed"] else "还没开始", "online_at": None,
                 "items": [], "sources": [], "entities": [], "new_evidence": [], "quality_pending": False}
     materials = _json(row["materials_json"], [])
     pages_by_no = _page_map(pages, materials)
+    _name_pages(pages_by_no, event["sources"])
     trusted = {p["url"] for p in pages_by_no.values() if _safe_url(p["url"])}
     for page in pages:
         links = _json(page["links_json"], [])
@@ -340,29 +520,33 @@ def _deepdive(row: dict | None, pages: list[dict], event: dict, records: list[di
     for i, name in enumerate(ITEM_NAMES, 1):
         raw = raw_items.get(name, raw_items.get(f"item{i}", {}))
         points = raw if isinstance(raw, list) else raw.get("points", []) if isinstance(raw, dict) else []
+        if name == "融资":
+            points = _current_funding_points(points, event)
         normalized = []
+        missing = list(raw.get("missing", [])) if isinstance(raw, dict) else []
         for point in points:
+            if name == "融资" and point.get("field") in FUNDING_FIELDS and point.get("text") == wording.SITE_TEXT["missing"]:
+                missing.append(point["field"])
+                continue
             evidence = _evidence(point.get("evidence", [point]), pages_by_no)
             entities = [{"name": e.get("name", ""), "url": _object_url(e.get("url", ""), trusted)}
                         for e in point.get("entities", []) if e.get("name")]
             normalized.append({"text": point.get("zh", point.get("point", point.get("text", "来源里没写"))),
                                "evidence": evidence, "entities": entities})
-        missing = raw.get("missing", []) if isinstance(raw, dict) else []
-        items.append({"name": name, "points": normalized, "missing": [FIELD_NAMES.get(m, wording.display_text(m)) for m in missing]})
-    evidence = []
-    for entry in _json(row["new_evidence_json"], []):
-        field = entry.get("field", "")
-        field = FIELD_NAMES.get(field, field)
-        if field not in set(FIELD_NAMES.values()):
-            continue
-        evidence.append({"field": field, "evidence": _evidence(entry.get("evidence", [entry]), pages_by_no)})
+        if name == "融资":
+            present = {point.get("field") for point in points if point.get("text") != wording.SITE_TEXT["missing"]}
+            missing = [m for m in missing if m not in present]
+        names = {**FIELD_NAMES, **FUNDING_FIELDS} if name == "融资" else FIELD_NAMES
+        items.append({"name": name, "points": normalized, "missing": list(dict.fromkeys(names.get(m, wording.display_text(m)) for m in missing))})
+    judgement = _json(row["push_judgement_json"], {})
+    evidence = _new_evidence(_json(row["new_evidence_json"], []), event, judgement, pages_by_no)
     entities = [{"name": e["name"], "url": _object_url(e.get("url", ""), trusted)}
                 for e in result.get("entities", []) if e.get("name")]
     return {"status": row["status"], "online_at": _stamp(row["online_at"]) if row["status"] == "完成" else None, "items": items,
             "sources": list(pages_by_no.values()), "entities": entities,
             "new_evidence": evidence, "found_at": _stamp(row["new_evidence_found_at"]),
             "quality_pending": bool(row["quality_pending"]),
-            "judgement": _json(row["push_judgement_json"], {})}
+            "judgement": judgement}
 
 
 def _frozen_header(event: dict, judgement: dict) -> dict:
@@ -370,10 +554,15 @@ def _frozen_header(event: dict, judgement: dict) -> dict:
     for key in header:
         if key in judgement:
             header[key] = judgement[key]
-    if "ai_label" in judgement and "social_label" in judgement and "tags" not in judgement:
-        header["tags"] = _tags({**judgement, "manual_label": judgement.get("manual_label")})
+    if "country" not in judgement and "hq" in judgement:
+        country = _country_value(judgement["hq"])
+        header["country"] = country if country in scan._COUNTRY_BY_ALIAS.values() else scan.COUNTRY_PENDING
+    if "tags" not in judgement and {"ai", "ai_label", "social", "social_label", "manual_label"}.intersection(judgement):
+        header["tags"] = _tags({"ai_label": judgement.get("ai", judgement.get("ai_label", event["_ai"])),
+                                "social_label": judgement.get("social", judgement.get("social_label", event["_social"])),
+                                "manual_label": judgement.get("manual_label")})
     header["marks"] = [m for m in MARKS if m in header["marks"]]
-    if event["legacy_country_pending"]:
+    if event["legacy_country_pending"] and not {"country", "hq"}.intersection(judgement):
         header["country"] = scan.COUNTRY_PENDING
     return header
 
@@ -395,7 +584,12 @@ def _conflicts(events: list[dict]) -> list[dict]:
     return result
 
 
-def _fetch_status(conn) -> tuple[list[dict], list[dict]]:
+def _fetch_status(conn, window_start, window_end) -> tuple[list[dict], list[dict]]:
+    baseline = db.first_issue_generated_at(conn)
+    missed = defaultdict(list)
+    for run in scan.missed_runs_in_window(conn, window_start, window_end):
+        missed[run["source_id"]].append((run["missed_range"], run["missed_start"], run["missed_end"]))
+    ranges = {sid: merge_missed_ranges(spans, baseline, reference=window_end) for sid, spans in missed.items()}
     sources = {s.id: {"id": s.id, "name": s.name, "column_name": s.column, "url": s.url,
                        "enabled": 1, "stage": "P0", "crawl_status": "正常", "stop_reason": None, "stopped_at": None}
                for s in P0_SOURCES}
@@ -426,19 +620,21 @@ def _fetch_status(conn) -> tuple[list[dict], list[dict]]:
                               "last_at": _stamp(run["ended_at"]) if run else None,
                               "count": run["count"] if run else 0,
                               "latest_at": _stamp(run["latest_at"]) if run else None,
-                              "missed_range": run["missed_range"] if run else ""})
+                              "missed_range": ranges.get(source["id"], ("", None, None))[0]})
     result = []
     for name, addresses in grouped.items():
         bad = [a for a in addresses if a["state"] not in {"成功", "已停止抓取"}]
         representative = max(bad or addresses, key=lambda a: a["last_at"] or "")
+        missed_range, _, _ = merge_missed_ranges(
+            [ranges[a["id"]] for a in addresses if a["id"] in ranges], baseline, reference=window_end)
         result.append({"name": name, "addresses": addresses, "state": representative["state"],
                        "result": representative["result"],
                        "technical": " · ".join(dict.fromkeys(a["technical"] for a in addresses if a["technical"])),
                        "last_at": max((a["last_at"] or "" for a in addresses), default="") or None,
                        "latest_at": max((a["latest_at"] or "" for a in addresses), default="") or None,
                        "count": sum(a["count"] for a in addresses),
-                       "missed_ranges": [a["missed_range"] for a in addresses if a["missed_range"]]})
-    result.sort(key=lambda s: next((i for i, n in enumerate(SOURCE_NAMES) if s["name"].startswith(n)), len(SOURCE_NAMES)))
+                       "missed_ranges": [missed_range] if missed_range else []})
+    result.sort(key=lambda s: min(display_rank(a["id"]) for a in s["addresses"]))
     active_names = {s["name"] for s in result}
     inactive = [s for s in inactive if s["name"] not in active_names]
     inactive += [{"name": name, "reason": reason} for name, reason in NOT_CONNECTED if name not in active_names]
@@ -534,8 +730,12 @@ def _snapshot(conn, cfg: Config, now: datetime) -> dict:
         company["_place_names"] = placenames.company_names(conn, company["id"])
     sources = _sources(conn)
     folded = _collapsed(conn)
-    next_day = _next_push(conn, now, cfg)
-    next_label = f"下次推送：{next_day:%m-%d} {'周一周二周三周四周五周六周日'[next_day.weekday()*2:next_day.weekday()*2+2]} 09:00"
+    try:
+        next_day = _next_push(conn, now, cfg)
+    except cal.CalendarMissing:
+        next_day = None
+    next_label = (f"下次推送：{next_day:%m-%d} 09:00"
+                  if next_day else None)
     ordinary = {int(row[0].rsplit(":", 1)[1]) for row in conn.execute("SELECT key FROM meta WHERE key LIKE 'backfill:normal:%'")}
     events = [_event({**e, "backfill_normal": e["id"] in ordinary}, company_rows[e["company_id"]], sources.get(e["id"], []), folded, next_label,
                      scan._fx_snapshot(conn, e["id"]))
@@ -575,7 +775,7 @@ def _snapshot(conn, cfg: Config, now: datetime) -> dict:
         # 历史推送正文不回写；网页用当前名单重算计数，避免沿用旧总部和过滤数量。
         counts_line = ""
     buckets = {key: [] for key in ("cards", "round_pending", "filtered")}
-    for event in sorted(week_events, key=_event_key):
+    for event in _sorted_events(week_events):
         key = {"已纳入": "cards", "轮次待核": "round_pending", "已过滤": "filtered"}[event["status"]]
         buckets[key].append(event["id"])
     deep_rows = _rows(conn, "SELECT * FROM deepdive ORDER BY run_date DESC")
@@ -598,7 +798,8 @@ def _snapshot(conn, cfg: Config, now: datetime) -> dict:
         company_verification = [v for v in verify_details.get(cid, []) if not v.get("event_id") or v["event_id"] == event["id"]]
         if any(v.get("correction") for v in company_verification):
             company_verification = [v for v in company_verification if v["field"] != "金额" or v.get("correction")]
-        pending = pending_fields(company_rows[cid], {"round_norm": event["round"], "amount_status": event["amount_status"]})
+        pending = pending_fields(company_rows[cid], {"round_norm": "待核" if event["_round_pending"] else "",
+                                                   "amount_status": event["amount_status"]})
         if any(v.get("correction") for v in company_verification):
             pending = [field for field in pending if field != "金额"]
         in_backfill_scope = bool(company_rows[cid].get("backfill") or conn.execute(
@@ -624,17 +825,20 @@ def _snapshot(conn, cfg: Config, now: datetime) -> dict:
                               "sources": list(unique_sources.values())})
             continue
         row = deep_by_company.get(cid)
+        event["_website"] = websites.get(event["name"].strip().casefold(), "")
         deep = _deepdive(row, pages.get((cid, row["run_date"]), []) if row else [], event, records, now)
         trusted = {s[key].get("website", "") for e in history for s in e["sources"] for key in ("structured", "extraction")}
         trusted.update(r["url"] for r in records if r.get("company", "").casefold() == event["name"].casefold()
                        and r.get("name", "").casefold() == event["name"].casefold())
         unique_sources = {}
         for source in [s for e in history for s in e["sources"]] + deep["sources"]:
-            unique_sources.setdefault(source["url"], source)
+            unique_sources.setdefault(_same_page(source["url"]), source)
         header = _frozen_header(event, deep.get("judgement", {}))
         confirmed_fields = {v["field"] for v in company_verification if v["text"] == wording.SITE_TEXT["verified"]}
+        judgement = deep.get("judgement", {})
         for field, key in (("国家", "country"), ("标签", "tags"), ("金额", "marks")):
-            if field in confirmed_fields:
+            frozen_keys = {"country", "hq"} if key == "country" else {"tags", "ai", "ai_label", "social", "social_label", "manual_label"} if key == "tags" else {"marks"}
+            if field in confirmed_fields and not frozen_keys.intersection(judgement):
                 header[key] = event[key]
         companies.append({"id": cid, "event_id": event["id"], "header": header,
                           "country": event["country"], "country_basis": event["country_basis"], "backfill": event["backfill"],
@@ -649,6 +853,7 @@ def _snapshot(conn, cfg: Config, now: datetime) -> dict:
     due = {e["company_id"] for e in events if e["id"] in eligible and e["status"] == "已纳入" and not e["collapsed"]
            and e["first_ingested_at"][:10] == now.date().isoformat()}
     due.update(r["company_id"] for r in rows_today if r["status"] != "不做")
+    due.difference_update(r["company_id"] for r in rows_today if r["status"] == "不做")
     counts = Counter(r["status"] for r in rows_today)
     progress = {"date": now.date().isoformat(), "total": len(due), "done": counts["完成"],
                 "running": counts["生成中"], "failed": counts["失败"], "timeout": counts["暂时没有"], "skipped": counts["不做"]}
@@ -677,7 +882,19 @@ def _snapshot(conn, cfg: Config, now: datetime) -> dict:
         if fields:
             evidence_by_company.setdefault(row["company_id"], {"company_id": row["company_id"],
                 "name": company_rows[row["company_id"]]["name"], "fields": fields, "found_at": _stamp(found)})
-    fetch, inactive = _fetch_status(conn)
+    current = conn.execute("SELECT window_start FROM digest WHERE date<=? "
+                           "ORDER BY date DESC LIMIT 1", (str(now.astimezone(BJ).date()),)).fetchone()
+    fetch_start = _moment(current[0]) if current and current[0] else window_start
+    fetch, inactive = _fetch_status(conn, fetch_start, now)
+    warning = warning_from_text(latest["text"]) if latest else ""
+    if latest and not warning:
+        errors = {value: ErrorType(key) for key, value in wording.SOURCE_ERRORS.items()}
+        source_lines = [SourceStatusLine(s["name"].removesuffix(" 网页版"), s["state"] == "成功",
+                        s["state"] == "已停止抓取", "", errors.get(s["result"]),
+                        missed_range="；".join(s["missed_ranges"])) for s in fetch
+                        if (s["last_at"] or "")[:10] == latest["date"]]
+        warning = fetch_warning(DigestData(date.fromisoformat(latest["date"]), None, now,
+                                           latest["status"], sources=source_lines))
     root = cfg.state_dir / "test" if cfg.test_mode else cfg.state_dir
     deep_budget = _usage(root / "deep-usage.json", now)
     if deep_budget["month_used"] is None:
@@ -694,19 +911,22 @@ def _snapshot(conn, cfg: Config, now: datetime) -> dict:
     homepage = homepage_status(conn, cfg, now, latest, [by_id[eid] for eid in buckets["cards"] if not by_id[eid]["collapsed"]])
     return {
         "meta": {"published_at": _stamp(now), "simulated": cfg.test_mode, "today": now.date().isoformat(),
-                 "recent_cutoff": (now.date() - timedelta(days=29)).isoformat(), "next_push_date": next_day.isoformat()},
-        "digests": [{"date": d["date"], "event_ids": _json(d["event_ids_json"], [])} for d in digests],
+                 "recent_cutoff": (now.date() - timedelta(days=29)).isoformat(), "next_push_date": next_day.isoformat() if next_day else None},
+        "digests": [{"date": d["date"], "event_ids": _json(d["event_ids_json"], []),
+                     "supplement_ids": _json(d.get("supplement_event_ids_json"), []),
+                     "generated_at": d["generated_at"], "card_sources": _json(d.get("card_sources_json"), {})} for d in digests],
         "week": {"date": latest["date"] if latest else None, **buckets,
                  "status": wording.DIGEST_LABELS.get(latest["status"], latest["status"]) if latest else None,
                  "status_key": {"基线": "baseline", "没跑完": "incomplete", "全部失败": "failed",
                  "部分失败": "partial", "有新增": "new", "没有新增": "empty"}.get(latest["status"]) if latest else None,
                  "baseline_notice": baseline_notice, "counts_line": counts_line, "hints_line": hints_line,
+                 "fetch_warning": warning,
                  "period_label": period_label,
                  "event_ids": [e["id"] for e in week_events],
                  "yc": [e["id"] for e in week_events if e["collapsed"] and e["status"] == "已纳入"],
                  "filtered_counts": dict(Counter(e["filter_reasons"][0] for e in week_events if e["filter_reasons"]))},
-        "events": events, "listing": [e["id"] for e in sorted(events, key=_event_key)
-                                      if e["id"] in eligible and not e["filter_reasons"] and not e["legacy_country_filtered"]],
+        "events": events, "listing": [e["id"] for e in _sorted_events(events)
+                                      if e["id"] in eligible and not e["out_of_scope"] and not e["legacy_country_filtered"]],
         "companies": companies,
         "status": {"sources": fetch, "not_connected": inactive, "pending_ratios": ratios,
                    "fx": fx.status_from_files(cfg, currencies=[e["amount_currency"] for e in _rows(conn, "SELECT amount_currency FROM funding_event WHERE amount_status='暂未换算'")]),
@@ -723,13 +943,15 @@ def _snapshot(conn, cfg: Config, now: datetime) -> dict:
 
 def _display_source(source: dict) -> dict:
     # 白名单防止抓取、抽取新增的内部字段进入静态站点。
-    return {key: source.get(key) for key in ("name", "beijing_at", "original_date_et", "url", "title")}
+    return {key: source.get(key) for key in ("name", "beijing_at", "published_at", "original_date_et", "url", "title")}
 
 
 def _display_event(event: dict, *, card=False) -> dict:
     fields = ("id", "company_id", "name", "summary", "round", "amount", "leads", "push_date",
-              "next_push_label", "marks", "tags", "status", "pending_reason", "filter_reasons", "country", "country_basis", "backfill", "supplement_unsent", "backfill_rank", "company_status", "admitted")
-    if not card:
+              "marks", "tags", "status", "pending_reason", "filter_reasons", "out_of_scope", "country", "country_basis", "backfill", "supplement_unsent", "backfill_rank", "company_status", "admitted")
+    if card:
+        fields += ("first_ingested_at", "next_push_label")
+    else:
         fields += ("round_text", "follows", "hq", "hq_basis", "date", "first_seen", "yc_batch", "city", "baseline_unpushed")
     result = {**{key: event[key] for key in fields},
               "sources": [_display_source(s) for s in event["sources"]]}
@@ -738,6 +960,9 @@ def _display_event(event: dict, *, card=False) -> dict:
     result["marks"] = [wording.MARK_LABELS.get(m, m) for m in result["marks"]]
     result["tags"] = [wording.display_text(t) for t in result["tags"]]
     result["pending_reason"] = wording.display_text(result["pending_reason"])
+    # 历史国家原因不改变轮次显示，但这些事件也没有作为卡片推送过。
+    if event["out_of_scope"] or event["legacy_country_filtered"]:
+        result["push_date"] = None
     return result
 
 
@@ -775,14 +1000,40 @@ def _site_payloads(data: dict) -> tuple[dict, dict[str, dict]]:
                           "detail_url": detail_url})
     visible = set(data["listing"])
     filtered = set(data["week"]["filtered"])
-    events = []
+    events, listing = [], []
+    by_id = {event["id"]: event for event in data["events"]}
+    supplement_ids = {eid for issue in data["digests"] for eid in issue.get("supplement_ids", [])}
+    for eid in data["listing"]:
+        event = by_id[eid]
+        # 事件编号保持稳定；同公司不同期的融资事件分别保留，摘要重列同一事件不复制卡片。
+        issue = next((d for d in data["digests"] if d["date"] == event["push_date"]
+                      and (eid in d["event_ids"] or eid in d.get("supplement_ids", []))), None)
+        card = _display_event(event, card=True)
+        card["issue_date"] = event["push_date"]
+        if eid not in supplement_ids or event.get("supplement_unsent"):
+            card["backfill"] = ""
+        if event.get("supplement_unsent"):
+            card.update(status=wording.SITE_TEXT["supplement_unsent"], pending_reason="", next_push_label=None)
+        if issue:
+            frozen = issue.get("card_sources", {}).get(str(eid))
+            if frozen is not None:
+                card["sources"] = frozen
+            elif issue.get("generated_at"):
+                # 旧期没有快照时，只采用当时已经入库的来源，不回写旧 digest。
+                cutoff = _moment(issue["generated_at"])
+                card["sources"] = [_display_source(s) for s in event["sources"]
+                                   if not s.get("first_seen_at") or _moment(s["first_seen_at"]) <= cutoff]
+        events.append(card)
+        listing.append(card["id"])
     for event in data["events"]:
-        if event["id"] in visible:
-            events.append(_display_event(event, card=True))
-        elif event["id"] in filtered:
+        if event["id"] in filtered and event["id"] not in visible:
             events.append({key: event[key] for key in ("id", "company_id", "name", "filter_reasons", "country", "country_basis")})
     # 某一期选择器只需要日期；历史过滤事件仍留在数据库和各公司详情中。
-    index = {**data, "companies": companies, "events": events,
+    index = {"meta": {key: value for key, value in data["meta"].items() if key != "next_push_date"},
+             "listing": listing,
+             "week": {key: data["week"][key] for key in
+                      ("date", "cards", "round_pending", "filtered", "event_ids", "yc")},
+             "companies": companies, "events": events,
              "digests": [{"date": d["date"]} for d in data["digests"]], "wording": wording.SITE_TEXT}
     return index, details
 
@@ -833,7 +1084,48 @@ def _validate_outputs(outputs: dict[str, str]) -> None:
         raise ValueError("站点产物检查失败：" + "；".join(problems))
 
 
-def build_site(conn: sqlite3.Connection, cfg: Config, *, out_dir=None, now=None) -> Path:
+RUNTIME_STATUS_KEYS = ("date", "status", "push", "alarm", "outbox", "simulated", "fx")
+V16_STATUS_KEYS = ("sources", "not_connected", "pending_ratios", "fx", "verification", "homepage",
+                   "deepdive_progress", "deepdive_budget", "extract_budget", "quality_pending", "new_evidence", "missed")
+
+
+def write_status(conn, cfg: Config, now: datetime, *, runtime=None, snapshot=None) -> dict:
+    """原运行字段与 V16o 状态合并写入内部文件，不混入 digest 计数。"""
+    root = cfg.state_dir / "test" if cfg.test_mode else cfg.state_dir
+    path = root / "status.json"
+    try:
+        previous = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        previous = {}
+    if not isinstance(previous, dict):
+        previous = {}
+    latest = next(iter(_rows(conn, "SELECT date,status,push FROM digest ORDER BY date DESC LIMIT 1")), None)
+    values = {"date": str(now.astimezone(BJ).date()), "status": latest["status"] if latest else "没有新增",
+              "push": bool(latest["push"]) if latest else False, "alarm": False,
+              "outbox": "", "simulated": bool(cfg.test_mode), "fx": fx.status_from_files(cfg)}
+    values.update({key: previous[key] for key in RUNTIME_STATUS_KEYS if key in previous})
+    values.update({key: value for key, value in (runtime or {}).items() if key in RUNTIME_STATUS_KEYS})
+    # 汇率的读入口仍是原文件；生成状态时可看到本次运行的新值。
+    status = snapshot["status"] if snapshot is not None else _snapshot(conn, cfg, now)["status"]
+    values.update({key: status[key] for key in V16_STATUS_KEYS if key != "fx"})
+    outbox.write_atomic(path, values)
+    return values
+
+
+def _test_snapshot_path(cfg, moment, slot=None):
+    parent = cfg.state_dir / "test-site" / str(moment.date())
+    name = slot or moment.strftime("%H%M")
+    if slot is None and name in {"0930", "1030"} or (parent / name).exists():
+        name = moment.strftime("%H%M%S")
+    candidate = parent / name
+    suffix = 2
+    while candidate.exists():
+        candidate = parent / f"{name}-{suffix}"
+        suffix += 1
+    return candidate
+
+
+def build_site(conn: sqlite3.Connection, cfg: Config, *, out_dir=None, now=None, snapshot_slot=None) -> Path:
     """生成完整静态快照并替换站点；失败保留原站点，成功保留上一份到 site.prev。"""
     moment = now or datetime.now(BJ)
     if not isinstance(moment, datetime) or moment.tzinfo is None or moment.utcoffset() is None:
@@ -843,8 +1135,11 @@ def build_site(conn: sqlite3.Connection, cfg: Config, *, out_dir=None, now=None)
     previous = dest.with_name(dest.name + ".prev")
     if any(p.is_symlink() or (p.exists() and not p.is_dir()) for p in (dest, previous)):
         raise ValueError("站点路径必须是普通目录")
-    data, details = _site_payloads(_snapshot(conn, cfg, moment))
-    outputs = {p.name: p.read_text(encoding="utf-8") for p in ASSETS.iterdir() if p.is_file()}
+    snapshot = _snapshot(conn, cfg, moment)
+    data, details = _site_payloads(snapshot)
+    assets = [p for p in ASSETS.rglob("*") if p.is_file()]
+    outputs = {p.relative_to(ASSETS).as_posix(): p.read_text(encoding="utf-8") for p in assets if p.suffix != ".woff2"}
+    fonts = {p.relative_to(ASSETS).as_posix(): p.read_bytes() for p in assets if p.suffix == ".woff2"}
     outputs["index.html"] = re.sub(r"__COPY_(\w+)__", lambda m: wording.SITE_TEXT[m[1]], outputs["index.html"])
     for name, payload in {"data.json": data, **details}.items():
         outputs[name] = json.dumps({**payload, "wording": wording.SITE_TEXT} if name != "data.json" else payload,
@@ -863,6 +1158,10 @@ def build_site(conn: sqlite3.Connection, cfg: Config, *, out_dir=None, now=None)
             target = stage / name
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(content, encoding="utf-8")
+        for name, content in fonts.items():
+            target = stage / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(content)
         if dest.exists():
             if previous.exists():
                 os.replace(previous, retired)
@@ -885,4 +1184,14 @@ def build_site(conn: sqlite3.Connection, cfg: Config, *, out_dir=None, now=None)
             shutil.rmtree(stage)
     if retired.exists():
         shutil.rmtree(retired)
+    status = write_status(conn, cfg, moment, snapshot=snapshot)
+    if cfg.test_mode:
+        history = _test_snapshot_path(cfg, moment, snapshot_slot)
+        history.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            shutil.copytree(dest, history)
+            outbox.write_atomic(history / "status.json", status)
+        except BaseException:
+            shutil.rmtree(history, ignore_errors=True)
+            raise
     return dest

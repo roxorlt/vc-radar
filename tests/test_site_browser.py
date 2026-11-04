@@ -45,13 +45,16 @@ def test_390px_layout_routes_and_interactions(seeded, route, tmp_path):
         checkWidth();
         let interactions=true;
         if(location.hash==='#list') {
+          document.querySelector('#open-filters').click();
           document.querySelector('[data-filter="period"][data-value="week"]').click();
           interactions=!!document.querySelector('[data-value="week"].on') && !document.getElementById('main').textContent.includes('TryNearby');
           document.querySelector('[data-filter="period"][data-value="all"]').click();
           interactions=interactions && document.getElementById('main').textContent.includes('TryNearby');
+          document.querySelector('[data-filter="period"][data-value="issue"]').click();
           const select=document.getElementById('issue'); select.value='date:2026-10-23';
           select.dispatchEvent(new Event('change',{bubbles:true}));
           interactions=interactions && document.getElementById('main').textContent.includes('Terse') && !document.getElementById('main').textContent.includes('TryNearby');
+          document.querySelector('[data-close-filters]').click();
         }
         if(location.hash==='#sources') {
           document.querySelectorAll('details').forEach(d=>d.open=true); checkWidth();
@@ -84,4 +87,4 @@ def test_390px_layout_routes_and_interactions(seeded, route, tmp_path):
     assert "暂时无法读取" not in checked["text"] and "正在读取" not in checked["text"]
     assert all(url.startswith(path.as_uri()) for url in checked["resources"])
     if route == "#c/mach9":
-        assert "产品是什么" in checked["text"] and "有新证据：总部" in checked["text"]
+        assert "产品是什么" in checked["text"] and "资料有出入：国家" in checked["text"]

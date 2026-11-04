@@ -17,10 +17,12 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from .cal import bj_date, is_cn_workday, is_push_day
 from . import fx, outbox, placenames
 from .config import BJ
-from .db import sync_sources
+from .db import sync_sources, first_issue_generated_at
+from .fetcher import has_missed, missed_interval
 from .labels import decide_dim, keyword_hit, overall
 from .models import Card, CardSource, Extracted, FetchOutcome, LabelDim, PendingLine, RawItem
 from .sources import registry
+from .sources.yc_directory import batch_in_window
 
 MARK_ORDER = ("新一轮", "大额", "补抓", "金额待核")
 FILTER_ORDER = ("批次超过 12 个月", "轮次不在范围")
@@ -338,9 +340,7 @@ def filter_reasons(item: RawItem, ext: Extracted, country: str, round_norm: str,
     """满足的全部原因，按批次超过 12 个月、轮次不在范围排序；国家不参与过滤。"""
     reasons = []
     batch = item.structured.get("yc_batch")
-    if batch and latest_yc_batches and str(batch).strip().casefold() not in {
-        name.strip().casefold() for name in latest_yc_batches[:4]
-    }:
+    if batch and latest_yc_batches and not batch_in_window(batch, latest_yc_batches):
         reasons.append("批次超过 12 个月")
     if round_norm == "过滤" or ext.is_fund_raise or ext.is_debt_only:
         reasons.append("轮次不在范围")
@@ -427,6 +427,7 @@ def record_fetch(conn: sqlite3.Connection, run_id: str, outcome: FetchOutcome, s
     sync_sources(conn, [outcome.source])
     known = {row[0] for row in conn.execute("SELECT external_id FROM raw_item WHERE source_id=?", (outcome.source.id,))}
     new_count = len({item.external_id for item in outcome.items if item.url.strip()} - known)
+    baseline = first_issue_generated_at(conn)
     for index, run in enumerate(outcome.runs):
         started, ended = _stamp(run.started_at), _stamp(run.ended_at)
         result = _enum_value(run.result)
@@ -437,14 +438,19 @@ def record_fetch(conn: sqlite3.Connection, run_id: str, outcome: FetchOutcome, s
         ).fetchone()
         if duplicate:
             continue
+        missed_start, missed_end = missed_interval(run.missed_range, run.missed_start, run.missed_end,
+                                                   reference=run.started_at)
+        missed = run.missed_range if has_missed(run.missed_range, baseline, missed_start, missed_end,
+                                               reference=run.started_at) else ""
         conn.execute(
             "INSERT INTO fetch_run(run_id, source_id, started_at, ended_at, http_code, count, new_count, "
-            "result, error_type, error_summary, note, latest_at, is_backfill, missed_range, simulated) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "result, error_type, error_summary, note, latest_at, is_backfill, missed_range, simulated, missed_start, missed_end) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (run_id, run.source_id, started, ended, run.http_code, run.count,
              new_count if index == len(outcome.runs) - 1 else 0, result,
              _enum_value(run.error_type), run.error_summary, run.note,
-             _stamp(run.latest_at) if run.latest_at else None, int(run.is_backfill), run.missed_range, int(simulated)),
+             _stamp(run.latest_at) if run.latest_at else None, int(run.is_backfill), missed, int(simulated),
+             _stamp(missed_start) if missed and missed_start else None, _stamp(missed_end) if missed and missed_end else None),
         )
     if outcome.stopped_now:
         stopped_at = _stamp(outcome.runs[-1].ended_at)
@@ -663,7 +669,7 @@ def collect_listing(conn: sqlite3.Connection, push_date: date, *, weekly: bool,
             company_id=row["company_id"], name=row["name"], marks=marks,
             round_label="轮次待确认" if row["round_norm"] == "待核" else row["round_norm"], amount_label=amount or "金额未披露", lead_label=lead_label,
             tag_label=tag_label, group=group, summary=fx.format_amount_text(summary, _fx_snapshot(conn, row["id"])) if summary else "",
-            sources=[CardSource(record["source_name"], _item_time(record["item"], _dt(record["raw"]["first_seen_at"])).date(), record["url"])
+            sources=[CardSource(registry.display_name(record["raw"]["source_id"]), _item_time(record["item"], _dt(record["raw"]["first_seen_at"])).date(), record["url"])
                      for record in sorted(evidence, key=_source_order)],
             amount_usd=amount_usd, event_date=date.fromisoformat(row["event_date"]),
             country=COUNTRY_PENDING if row["status"] == "总部待核" else row["country"],
@@ -708,6 +714,31 @@ def upsert_digest(conn: sqlite3.Connection, row: dict, *, first_issue: bool = Fa
                      "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (values["date"],))
 
 
+def missed_runs_in_window(conn: sqlite3.Connection, window_start: Optional[datetime], window_end: datetime) -> list[dict]:
+    """读取本期窗口内仍有效的漏抓行，不删除历史，也不包含已停抓地址。"""
+    baseline = first_issue_generated_at(conn)
+    since = window_start or baseline
+    # 只读导出可能面对尚未迁移的旧库（没有起止两列）：按两列为空读取，不写库。
+    columns = {column[1] for column in conn.execute("PRAGMA table_info(fetch_run)")}
+    bounds = ("f.missed_start", "f.missed_end") if "missed_start" in columns else ("NULL", "NULL")
+    rows = conn.execute(
+        f"SELECT f.*,{bounds[0]} AS missed_start,{bounds[1]} AS missed_end,s.name FROM fetch_run f "
+        "JOIN source s ON s.id=f.source_id WHERE s.enabled=1 AND s.crawl_status!='已停抓' AND "
+        f"(TRIM(COALESCE(f.missed_range,''))!='' OR {bounds[0]} IS NOT NULL OR {bounds[1]} IS NOT NULL)"
+    )
+    names = [column[0] for column in rows.description]
+    result = []
+    for values in rows:
+        row = dict(zip(names, values))
+        started = _dt(row["started_at"])
+        if (since is not None and started <= since) or started > window_end:
+            continue
+        if has_missed(row["missed_range"], baseline, row["missed_start"], row["missed_end"], reference=started):
+            start, end = missed_interval(row["missed_range"], row["missed_start"], row["missed_end"], reference=started)
+            result.append({**row, "missed_start": start, "missed_end": end})
+    return result
+
+
 def failed_days_in_window(conn: sqlite3.Connection, window_start: Optional[datetime], push_date: date, *,
                           outbox_dir: Path | None = None) -> int:
     """窗口起日之后、推送日前的中国工作日中，整天失败、缺 digest 或有漏抓的天数。
@@ -732,7 +763,7 @@ def failed_days_in_window(conn: sqlite3.Connection, window_start: Optional[datet
             first_dates.append(first_date)
     if first_dates:
         first = max(first, max(first_dates) + timedelta(days=1))
-    runs = conn.execute("SELECT started_at, missed_range FROM fetch_run").fetchall()
+    runs = conn.execute("SELECT started_at, missed_range, missed_start, missed_end FROM fetch_run").fetchall()
     if not runs:
         return 0
     first = max(first, bj_date(min(_dt(row["started_at"]) for row in runs)))
@@ -741,7 +772,9 @@ def failed_days_in_window(conn: sqlite3.Connection, window_start: Optional[datet
     statuses = {row["date"]: row["status"] for row in conn.execute(
         "SELECT date, status FROM digest WHERE date>=? AND date<?", (first.isoformat(), push_date.isoformat())
     )}
-    missed = {bj_date(_dt(row["started_at"])) for row in runs if row["missed_range"] and row["missed_range"].strip()}
+    baseline = first_issue_generated_at(conn)
+    missed = {bj_date(_dt(row["started_at"])) for row in runs if has_missed(
+        row["missed_range"], baseline, row["missed_start"], row["missed_end"], reference=_dt(row["started_at"]))}
     count = 0
     for offset in range((push_date - first).days):
         day = first + timedelta(days=offset)
@@ -798,7 +831,7 @@ def _effective_extracted(item: RawItem, ext: Extracted, batches: list[str]) -> E
                      website=ext.website or item.structured.get("website"),
                      one_liner=ext.one_liner or item.structured.get("one_liner", ""))
     batch = item.structured.get("yc_batch")
-    recent = batch and str(batch).casefold() in {name.casefold() for name in batches[:4]}
+    recent = bool(batch and batch_in_window(batch, batches))
     if (_is_yc_directory(item) or _is_yc_launch(item)) and recent and (
         not _present(result.round_text) or "yc" in result.round_text.casefold()
     ):
@@ -1013,14 +1046,8 @@ def _evidence_rows(conn: sqlite3.Connection, *, event_id: Optional[int] = None, 
 
 
 def _source_order(record: dict) -> tuple:
-    orders = {}
-    for source in registry.P0_SOURCES:
-        name = source.name.casefold()
-        orders[name] = min(orders.get(name, source.order), source.order)
-    # registry 的 Term Sheet=0 是抓取优先级；卡片展示须遵守 PRD 表中的最后一位。
-    last = max(orders.values(), default=0) + 1
-    orders["term sheet"] = last
-    return (orders.get(record["source_name"].casefold(), last + 1),
+    source_id = record["raw"]["source_id"] if record.get("raw") is not None else record.get("source_id", "")
+    return (registry.display_rank(source_id),
             _dt(record["ext"].get("_source_first_seen_at", record["raw"]["first_seen_at"])), record["raw_item_id"])
 
 
@@ -1081,7 +1108,7 @@ def amount_label(conn: sqlite3.Connection, row, evidence: list[dict] | None = No
             # 选取原始冲突串里的来源，保持主来源和后续来源顺序。
             displayed = [record for record in ordered if f"{record['source_name']} 写 " in row["amount_text"]]
             if displayed:
-                return "，".join(f"{record['source_name']} 写 " + fx.format_amount(
+                return "，".join(f"{registry.display_name(record['raw']['source_id'])} 写 " + fx.format_amount(
                     _source_amount(record), record["ext"].get("amount_text")) for record in displayed)
         return fx.format_amount_text(row["amount_text"])
     return fx.format_amount(dict(row), row["amount_text"])

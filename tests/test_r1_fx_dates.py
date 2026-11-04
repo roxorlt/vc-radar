@@ -40,10 +40,11 @@ def _pages(tmp_path, monkeypatch, args, *, test_db_days=()):
                                   "generated_at": NOW, "status": "有新增", "text": ""})
         outbox.write_atomic(tmp_path / "test" / "status.json", {"fx": session.status})
         path = site.build_site(conn, cfg, now=NOW)
+        status = site._snapshot(conn, cfg, NOW)["status"]["fx"]
     data = json.loads((path / "data.json").read_text())
     cid = data["events"][0]["company_id"]
     return (_text(render_page(path, "weekHtml")), _text(render_page(path, "detailHtml", cid)),
-            _text(render_page(path, "sourcesHtml")))
+            "汇率日期：" + status["date"][5:] if status["ok"] else status["message"])
 
 
 def test_r1_fixed_rates_file_older_day_notes_date_on_card_and_detail_but_status_stays_grey(tmp_path, monkeypatch):

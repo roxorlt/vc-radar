@@ -66,14 +66,15 @@ def test_39_10_three_phases_match_sql_and_keep_four_first_issue_cards(env,tmp_pa
     k={c['event_id'] for c in data['candidates'] if c['rank'] and c['rank']>10}
     assert set(result['landing'])==k and len(k)==45
     assert result['route']==dict(period='all',tag='all',round='all',status='all',backfill=False,unsentOnly=True)
-    assert '补充未推送 45 家' in result['html'] and '查看全部' in result['html']
+    assert '补充未推送 45 家' not in result['html'] and '查看全部' in result['html']
     assert '总部待核' not in result['html'] and '非美国' not in result['html']
     sections,ids=backfill.collect_supplement(conn,cfg,PUSH.date())
     backfill.mark_supplement(conn,ids,PUSH.date());conn.commit()
     pushed=site._snapshot(conn,cfg,PUSH)
     assert set(pushed['week']['cards'])==set(first_four)
     result=check(pushed)
-    assert set(result['marked'])==set(ids) and not k & set(result['admitted'])
+    # V17c：只改公司补充状态还不够，事件必须已写进 digest.补充事件。
+    assert result['marked']==[] and not k & set(result['admitted'])
     assert set(result['landing'])==k
     scan.upsert_digest(conn,{'date':PUSH.date(),'push':True,'event_ids':[],
                             'supplement_event_ids_json':ids,'generated_at':PUSH,'status':'没有新增'})

@@ -104,7 +104,7 @@ def test_first_day_allows_sync_deep_and_separately_numbered_resends(tmp_path, mo
         assert pipeline.run(cfg, arguments(fixture, resend=True, prod_rules=True), clock("2026-10-28", "10:29")) == 0
     files = sorted(cfg.outbox_dir.glob("2026-10-28-first-resend-*.json"))
     assert [path.name for path in files] == ["2026-10-28-first-resend-1.json", "2026-10-28-first-resend-2.json"]
-    assert all("重发" in json.loads(path.read_text())["text"].splitlines()[2].split(" · ") for path in files)
+    assert all("重发" not in json.loads(path.read_text())["text"] for path in files)
     assert first.read_bytes() == original_bytes
     for number, stamp in [(2, "2026-10-28 12:00:00"), (10, "2026-10-28 10:00:00")]:
         outbox.write_atomic(cfg.outbox_dir / f"2026-10-28-first-resend-{number}.sent", {"sent_at": stamp, "result": "ok"})

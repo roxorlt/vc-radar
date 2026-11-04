@@ -65,16 +65,16 @@ def test_exact_push_format_and_verified_official_names(links):
                   filtered={"轮次不在范围":2})
     text = render.render_push(data, links_file=links)
     lines = text.splitlines()
-    assert lines[:2] == ["10-31 周六 · 早期融资 · 本周",
-                        "本周共 5 家：AI相关 5 · 社交/社群相关 0 · 新一轮 1 · 大额 1 · 另有 1 家轮次待确认 · 已过滤 2 家"]
-    assert lines[6] == ("5. Flapping Airplanes【新一轮】【大额】【补录】【金额说法不一】｜公司提供软件。｜种子轮 · 2700 万美元｜"
+    assert lines[0] == "10-31 周六 · 早期融资 · 本周"
+    assert lines[1].startswith("1. ") and "本周共" not in text and "已过滤" not in text
+    assert lines[5] == ("5. Flapping Airplanes【新一轮】【大额】【补录】【金额说法不一】｜公司提供软件。｜种子轮 · 2700 万美元｜"
                         "[官网](https://flapping.test/) [来源](https://news.test/Flapping-Airplanes)")
     assert "[官网](https://terse.test/)" in text
     for line in lines:
         if any(f". {name}｜" in line for name in ["Terse AI", "Numeracle", "Slingshot Insurance"]):
             assert "[官网]" not in line and "[来源]" in line
     assert "later.test" not in text
-    assert lines[-1] == f"[看本周全部 5 家]({BASE}/#week)｜[来源网站状态]({BASE}/#sources)"
+    assert lines[-1] == f"[看本周全部]({BASE}/#week)"
     clean(text)
 
 
@@ -104,20 +104,20 @@ def test_sections_have_separate_slots_counts_order_and_overflow(links, has_cards
     lines = text.splitlines()
     clean(text)
     assert "空段" not in text and "空段提示" not in text
-    assert lines[2] == "另补充此前漏掉的 12 家 · 另有一组公司"
+    assert "另补充此前漏掉的" not in text and "另有一组公司" not in text
     start = lines.index(sections[0].title)
     assert lines[start+1].startswith("1. Extra 11｜") and lines[start+10].startswith("10. Extra 02｜")
-    overflow = f"另有 2 家没有列出，[在往期页看]({BASE}/#backfill)" if base else "另有 2 家没有列出"
+    overflow = f"还有一些没有列出，[在往期页看]({BASE}/#backfill)" if base else "还有一些没有列出"
     assert lines[start+11] == overflow
     assert lines[start+13].startswith("1. Another｜")
     if has_cards:
-        assert lines[1].startswith("本周共 11 家：AI相关 11")
-        assert lines[start-1] == (f"YC 新一批 31 家，[名单见网页]({BASE}/#yc)" if base else "YC 新一批 31 家")
+        assert lines[1].startswith("1. Weekly 10｜")
+        assert lines[start-2].startswith("10. Weekly 01｜")
+        assert lines[start-1] == "YC 新一批 31 家" + (f"，[名单见网页]({BASE}/#yc)" if base else "")
     else:
         assert lines[1] == wording.NO_NEW
-        assert lines[3] == "已接入 1 个来源网站，全部正常：TechCrunch 31 条"
-        assert lines[4] == "上一次有新公司是 10-30 那期，12 家"
-        assert start == 5
+        assert "已接入" not in text and "上一次有新公司" not in text
+        assert start == 2
     if not base:
         assert "/#" not in text and "见网页" not in text and "在往期页看" not in text
     assert render.remove_page_links(render.render_push(replace(data, base_url=BASE), links_file=links)) == render.render_push(replace(data, base_url=""), links_file=links)
@@ -132,12 +132,16 @@ def test_error_and_all_hint_wording(links, error):
     text = render.render_push(data, links_file=links, failed_days=2, early_push=True,
                               incomplete_until=date(2026,10,27))
     clean(text)
-    hints = text.splitlines()[2]
-    assert hints.startswith("首次运行收录 46 家以前的公司，不算新增 · 本周一到 10-27 日的内容没抓全 · 提前推送 · 重发")
-    assert "本周有 2 天没抓到" in hints
-    assert "可能有遗漏：TechCrunch，10-28 至 10-30的内容没抓全" in hints
-    assert hints.endswith("Term Sheet 已停止抓取：对方封禁 · 本周 2 家资料有出入")
-    assert "不代表没有新公司。" in hints or error == ErrorType.TS_STOPPED
+    hints = text.splitlines()[1]
+    assert all(old not in text for old in ("不算新增", "没抓全", "提前推送", "重发", "本周有 2 天", "资料有出入"))
+    stopped = "Term Sheet 没抓到：对方不再允许抓取" + wording.FETCH_WARNING_END
+    if error == ErrorType.TS_STOPPED:
+        assert hints == stopped and "已停止抓取" not in text
+    else:
+        assert hints == ("TechCrunch 没抓到：" + wording.PUSH_FAILURE_REASONS[error].format(date="10-30")
+                         + wording.FETCH_WARNING_END + stopped)
+    assert text.splitlines()[2].startswith("1. ")
+    assert data.baseline_count == 46 and data.new_evidence_count == 2
 
 
 @pytest.mark.parametrize("state", ["没跑完", "全部失败", "没有新增"])
@@ -146,9 +150,11 @@ def test_empty_and_run_failures_use_exact_copy(links, state):
     text = render.render_push(data, links_file=links)
     clean(text)
     assert wording.NO_NEW in text
-    assert "已接入 1 个来源网站，其中 1 个已停止抓取" in text
+    assert "已接入" not in text and "已停止抓取" not in text
     if state != "没有新增":
-        assert wording.RUN_ERRORS[state] in text
+        assert "没抓到：" in text.splitlines()[1] and text.count(wording.FETCH_WARNING_END) == 1
+    else:
+        assert len(text.splitlines()) == 2
 
 
 @pytest.mark.parametrize("amount", ["约 1200 万美元（原 €1100 万，按 10-30 汇率）", "1000 万（币种待确认）", "€1100 万（暂未换算成美元）"])
@@ -172,7 +178,7 @@ def test_legacy_adapter_and_resend_preserve_source_links():
     assert "3 家" not in text
     assert "可能有遗漏：X，10-27 至 10-30的内容没抓全" in text
     resend = render.add_resend_notice(render.remove_page_links(text))
-    assert "提前推送 · 重发 · 可能有遗漏" in resend
+    assert "X 没抓到：此前遗漏的内容还没有补齐" in resend and "重发" not in resend and "提前推送" not in resend
     assert "[来源](https://news.test/x)" in resend and "/#" not in resend
     assert "见网页" not in resend and "在往期页看" not in resend
     assert render.add_resend_notice(resend) == resend
@@ -243,9 +249,10 @@ def test_site_outputs_use_display_words_and_legacy_visibility(page):
     conn, cfg = page
     path = site.build_site(conn, cfg, now=NOW)
     data = json.loads((path / "data.json").read_text())
-    assert data["week"]["cards"] == [1,2] and data["week"]["round_pending"] == [3]
+    assert data["week"]["cards"] == [2,1] and data["week"]["round_pending"] == [3]
     assert data["week"]["filtered"] == [5]
-    assert data["week"]["filtered_counts"] == {"B 轮及以后":1}
+    assert site._snapshot(conn, cfg, NOW)["week"]["filtered_counts"] == {"B 轮及以后":1}
+    assert "filtered_counts" not in data["week"] and "status" not in data
     assert 4 not in data["listing"] and 6 not in data["listing"]
     e = next(e for e in data["events"] if e["id"] == 1)
     assert e["marks"] == ["补录", "金额说法不一"] and e["tags"] == ["AI相关", "标签待确认"]
@@ -262,7 +269,7 @@ def test_site_outputs_use_display_words_and_legacy_visibility(page):
       const fs=require('fs'),p=require('path'),root=process.argv[1],ui=require(p.join(root,'app.js'));
       const d=JSON.parse(fs.readFileSync(p.join(root,'data.json')));
       const detail=id=>JSON.parse(fs.readFileSync(p.join(root,'c',id+'.json')));
-      console.log(JSON.stringify({week:ui.weekHtml(d),sources:ui.sourcesHtml(d),
+      console.log(JSON.stringify({week:ui.weekHtml(d),yc:ui.ycHtml(d),
         detail:ui.detailHtml(detail('word-1'),'word-1'),baseline:ui.detailHtml(detail('word-6'),'word-6'),
         selections:['all','week','30','date:2026-10-30'].map(period=>ui.selectEvents(d,{period,tag:'all',round:'all',status:'all'}).map(e=>e.id))}));
     """
@@ -272,10 +279,12 @@ def test_site_outputs_use_display_words_and_legacy_visibility(page):
     assert "国家和依据" in rendered["detail"] and "旧金山" in rendered["detail"]
     assert "城市待确认" not in rendered["detail"]
     assert "原文日期（美国东部时间）" in rendered["detail"]
-    assert "首次运行：收录了 46 家以前的公司，不算新增" in rendered["sources"]
-    assert "Term Sheet 网页版已停止抓取：对方封禁，2026-10-30" in rendered["sources"]
-    assert "这次没来得及抓" in rendered["sources"]
-    assert "首次运行时已有，未推送" in rendered["baseline"] and "下次推送" not in rendered["baseline"]
+    assert "不算新增" not in rendered["week"] and "来源网站状态" not in rendered["week"]
+    internal = site._snapshot(conn, cfg, NOW)
+    assert internal["week"]["baseline_notice"] == "首次运行：收录了 46 家以前的公司，不算新增"
+    assert any(s["state"] == "已停止抓取" for s in internal["status"]["sources"])
+    assert "这次没来得及抓" not in rendered["week"]
+    assert "首次运行时已有，未推送" not in rendered["baseline"] and "下次推送" not in rendered["baseline"]
 
 
 def test_company_country_in_description_is_preserved(links):
@@ -297,13 +306,13 @@ def test_new_routes_and_supplement_badges(page, route):
     data_path = path / "data.json"
     data = json.loads(data_path.read_text())
     assert 1 not in data["week"]["cards"] and 1 not in data["week"]["event_ids"]
-    assert data["status"]["pending_ratios"]["denominator"] == 2
+    assert site._snapshot(conn, cfg, NOW)["status"]["pending_ratios"]["denominator"] == 2
     # 合成一个已折叠 YC 名单，不借用真实抓取数据。
     data["week"]["yc"] = [2]
     data_path.write_text(json.dumps(data))
     script = r"""
       const fs=require('fs'),p=require('path'),vm=require('vm'),root=process.argv[1];
-      const nodes={header:{innerHTML:''},main:{innerHTML:''}},listeners={};
+      const nodes={header:{innerHTML:'早期创投监控'},main:{innerHTML:''}},listeners={};
       const context={URL,location:{hash:ROUTE},
         document:{querySelectorAll:()=>[],getElementById:id=>nodes[id],addEventListener:(name,fn)=>listeners[name]=fn},
         window:{addEventListener:()=>{},scrollTo:()=>{}},
@@ -321,17 +330,18 @@ def test_new_routes_and_supplement_badges(page, route):
     assert rendered["title"].endswith(" · 早期创投监控")
     if route == "#yc":
         assert "Word 2" in rendered["initial"] and "Word 1" not in rendered["initial"]
-        assert "YC 新一批名单" in rendered["header"]
+        assert rendered["title"].startswith("YC 新一批名单")
     else:
         assert "Word 1" in rendered["initial"] and "Word 2" not in rendered["initial"]
-        assert "补充未推送 1 家" in rendered["initial"] and "查看全部" in rendered["initial"]
+        assert "补充未推送 1 家" not in rendered["initial"] and "查看全部" in rendered["initial"]
         assert "Word 2" in rendered["after"]  # 可继续改筛选，不会被路由强制覆盖。
     detail = node(path, """
       const fs=require('fs'),p=require('path'),root=process.argv[1],ui=require(p.join(root,'app.js'));
       const d=JSON.parse(fs.readFileSync(p.join(root,'c/word-1.json')));
       console.log(JSON.stringify(ui.detailHtml(d,'word-1')));
     """)
-    assert ('class="backfill">此前漏掉' in detail) is (route != "#backfill")
+    assert rendered["header"] == "早期创投监控"
+    assert ('class="mark is-supp">此前漏掉' in detail) is (route != "#backfill")
 
 
 def test_large_index_retains_details_but_hides_all_pure_baselines(tmp_path, links):
@@ -387,8 +397,8 @@ def test_pipeline_resends_old_digest_with_new_copy_without_mutating_original(tmp
     resend, = cfg.outbox_dir.glob("*-resend-*.json")
     text = json.loads(resend.read_text())["text"]
     clean(text)
-    assert text.splitlines()[2] == "重发"
-    assert "上一次有新公司是 10-30 那期，12 家" in text
+    assert len(text.splitlines()) == 2 and "重发" not in text
+    assert "上一次有新公司" not in text
     assert main.read_bytes() == before
     conn = db.connect(cfg.db_path)
     assert conn.execute("SELECT text FROM digest").fetchone()[0] == original
@@ -406,9 +416,11 @@ def test_fx_status_uses_normal_date_or_degraded_message(page, ok, message, expec
     path = site.build_site(conn, cfg, now=NOW)
     html = node(path, """
       const fs=require('fs'),p=require('path'),root=process.argv[1],ui=require(p.join(root,'app.js'));
-      console.log(JSON.stringify(ui.sourcesHtml(JSON.parse(fs.readFileSync(p.join(root,'data.json'))))));
+      console.log(JSON.stringify(ui.weekHtml(JSON.parse(fs.readFileSync(p.join(root,'data.json'))))));
     """)
-    assert expected in html
+    status = site._snapshot(conn, cfg, NOW)["status"]["fx"]
+    assert ("汇率日期：" + status["date"][5:] if ok else status["message"]) == expected
+    assert expected not in html
 
 
 def test_empty_evidence_list_uses_full_company_phrase(page):
@@ -417,12 +429,13 @@ def test_empty_evidence_list_uses_full_company_phrase(page):
     path = site.build_site(conn, cfg, now=NOW)
     html = node(path, """
       const fs=require('fs'),p=require('path'),root=process.argv[1],ui=require(p.join(root,'app.js'));
-      console.log(JSON.stringify(ui.sourcesHtml(JSON.parse(fs.readFileSync(p.join(root,'data.json'))))));
+      console.log(JSON.stringify(ui.weekHtml(JSON.parse(fs.readFileSync(p.join(root,'data.json'))))));
     """)
-    assert "暂时没有资料有出入的公司" in html
+    assert "暂时没有资料有出入的公司" not in html
+    assert site._snapshot(conn, cfg, NOW)["status"]["new_evidence"] == []
 
 
-def test_legacy_hq_pending_header_cannot_restore_old_country(page):
+def test_legacy_hq_pending_header_uses_frozen_country_without_changing_event(page):
     from test_site_build import add_deep
     conn, cfg = page
     add_deep(conn, "word-2", "完成")
@@ -430,7 +443,8 @@ def test_legacy_hq_pending_header_cannot_restore_old_country(page):
                  (json.dumps({"country":"美国"}),))
     path = site.build_site(conn, cfg, now=NOW)
     detail = json.loads((path / "c/word-2.json").read_text())
-    assert detail["companies"][0]["header"]["country"] == "国家待确认"
+    assert detail["companies"][0]["header"]["country"] == "美国"
+    assert detail["events"][0]["country"] == "国家待确认"
     assert detail["events"][0]["status"] == "已纳入"
 
 
@@ -440,5 +454,5 @@ def test_custom_section_overflow_and_no_links(links):
                           f"另有 1 家，[在往期页看]({BASE}/#backfill)")
     data = digest(extra_sections=[section])
     text = render.render_push(data, links_file=links)
-    assert text.endswith("另有 1 家没有列出") and "/#" not in text
+    assert text.endswith("还有一些没有列出") and "/#" not in text
     clean(text)

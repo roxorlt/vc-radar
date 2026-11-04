@@ -8,6 +8,7 @@ import pytest
 
 from test_pipe_edges import production_run, production_transport
 from test_pipe_pipeline import arguments, offline, rows, write_fixture
+from test_er_render import card
 from vcradar import cli, config, db, outbox, pipeline, render, scan
 from vcradar.config import BJ, Config
 from vcradar.guard import check_no_placeholder
@@ -119,9 +120,9 @@ def test_cli_first_issue_uses_default_or_explicit_link_mode(tmp_path, monkeypatc
     if not base_url or no_links:
         assert "/#" not in text and "详情" not in text and "看本周全部" not in text
     else:
-        assert f"[来源网站状态]({BASE}/#sources)" in text
+        assert f"[看本周全部]({BASE}/#week)" in text and "#sources" not in text
     assert "[来源](https://synthetic.example/anchor)" in text
-    assert "本周共 5 家" in text and "1. Anchor" in text
+    assert "本周共" not in text and "1. Anchor" in text
     assert not check_no_placeholder(text)
     assert "占位地址" not in capsys.readouterr().err
     assert config.load_config(path).base_url == base_url
@@ -155,7 +156,7 @@ def test_replay_with_placeholder_warns_or_omits_links(tmp_path, capsys, no_links
 
 def stored_issue(cfg, kind):
     generated = datetime(2026, 10, 30, 8, 40, tzinfo=BJ)
-    text = render.render_push(DigestData(DAY, None, generated, "没有新增", base_url=PLACEHOLDER,
+    text = render.render_push(DigestData(DAY, None, generated, "有新增", cards=[card()], base_url=PLACEHOLDER,
                                          new_evidence_count=2, review_site_passed=True))
     conn = db.connect(cfg.db_path)
     scan.upsert_digest(conn, {"date": DAY, "push": True, "status": "没有新增", "text": text,
@@ -181,8 +182,8 @@ def test_resend_checks_saved_text_or_applies_no_links_without_changing_original(
     if no_links:
         assert result == 0 and len(paths) == 1
         text = json.loads(paths[0].read_text())["text"]
-        assert text.splitlines()[2] == "重发 · 本周 2 家资料有出入"
-        assert "](" not in text and "看本周全部" not in text and not check_no_placeholder(text)
+        assert "重发" not in text and "资料有出入" not in text
+        assert "[来源]" in text and "看本周全部" not in text and not check_no_placeholder(text)
         assert rows(cfg, "digest")[0]["resend_count"] == 1
     else:
         assert result == 1 and not paths
@@ -206,6 +207,13 @@ def test_production_failure_fallback_also_rejects_placeholder_before_outbox(tmp_
     production_transport(monkeypatch, fixture)
     production_run(cfg, "2026-10-26", first_issue=True)
     cfg.base_url = PLACEHOLDER
+    # 保留一家公司，才能覆盖带页脚链接时的占位地址守卫。
+    original_listing = pipeline._listing_for_issue
+    def listing(*args, **kwargs):
+        result = original_listing(*args, **kwargs)
+        result["cards"] = [card()]
+        return result
+    monkeypatch.setattr(pipeline, "_listing_for_issue", listing)
 
     def fail(*args, **kwargs):
         raise RuntimeError("手写抓取故障")

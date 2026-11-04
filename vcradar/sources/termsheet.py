@@ -11,7 +11,7 @@ ISSUE_PREFIX = "https://content.fortune.com/newsletter/termsheet/?post_id="
 
 
 def issues(response) -> list[Issue]:
-    """使用 WP id 生成期网址，date_gmt 按 UTC 解析。"""
+    """使用 WP id 生成期网址，date_gmt 按 UTC 解析，缺失时保留空时间。"""
     payload = json_body(response)
     if not isinstance(payload, list):
         raise ValueError("WP 期列表格式不符")
@@ -19,13 +19,13 @@ def issues(response) -> list[Issue]:
     try:
         for post in payload:
             ident = str(post["id"])
-            published = parse_time(post["date_gmt"])
-            if not ident.isdigit() or published is None:
+            published = parse_time(post.get("date_gmt"))
+            if not ident.isdigit():
                 raise ValueError
             values[ident] = Issue(ISSUE_PREFIX + ident, published, ident)
     except (KeyError, TypeError) as exc:
         raise ValueError("WP 期列表无法解析") from exc
-    return sorted(values.values(), key=lambda issue: issue.at, reverse=True)
+    return sorted(values.values(), key=lambda issue: issue.at.timestamp() if issue.at else float("-inf"), reverse=True)
 
 
 def parse(response, source_id="ts_web", issue_url=None, published_at=None) -> Parsed:

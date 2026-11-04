@@ -46,7 +46,7 @@ def test_36_conditional_terms_must_be_in_same_sentence(city,context,expected):
 @pytest.mark.parametrize('flags',[
     ['--fixture','unused'],['--dry-run'],['--search-fixtures','unused'],['--rates-file','unused'],
     ['--rates-fail'],['--now','10:30'],['--links-file','unused'],['--dry-run','--assume-review-site-passed'],
-    ['--replay','unused'],['--to','test'],['--no-verify'],['--prod-rules'],['--reset-test-db'],
+    ['--replay','unused'],['--to','test'],['--no-verify'],['--prod-rules'],['--reset-test-db'],['--test'],
 ])
 def test_37_all_a_flags_use_one_isolation_rule(flags):
     args=cli.parse_args(flags)

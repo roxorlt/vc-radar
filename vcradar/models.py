@@ -94,6 +94,8 @@ class FetchRunRecord:
     is_backfill: bool = False
     missed_range: str = ""         # 漏抓时间段（北京时间），有漏抓才填
     pages: int = 1
+    missed_start: Optional[datetime] = None
+    missed_end: Optional[datetime] = None
 
 
 @dataclass
@@ -107,6 +109,7 @@ class SourceState:
     yc_last_batch: Optional[str] = None
     yc_last_batch_total: Optional[int] = None
     last_latest_at: Optional[datetime] = None   # 上次成功时最新一条的时间（算漏抓时间段用）
+    baseline_at: Optional[datetime] = None     # 首期 generated_at；只作漏抓边界
 
 
 @dataclass
@@ -123,6 +126,9 @@ class FetchOutcome:
     missed_range: str = ""         # 有漏抓时的北京时间段
     yc_batch: Optional[str] = None
     yc_batch_total: Optional[int] = None
+
+    missed_start: Optional[datetime] = None
+    missed_end: Optional[datetime] = None
 
 
 # ---------------------------------------------------------------- 抽取
@@ -202,6 +208,9 @@ class SourceStatusLine:
     error_type: Optional[ErrorType] = None
     latest_beijing_date: Optional[date] = None
     missed_range: str = ""
+    missed_start: Optional[datetime] = None
+    missed_end: Optional[datetime] = None
+    source_id: Optional[str] = None  # 分组中展示序号最小的地址；旧调用方可不传。
 
 
 @dataclass
@@ -238,3 +247,4 @@ class DigestData:
     weekly: bool = True
     extra_sections: list[PushSection] = field(default_factory=list)
     review_site_passed: bool = False
+    baseline_at: Optional[datetime] = None

@@ -13,8 +13,8 @@ from .config import BJ, Config, is_test_run
 from .models import DigestData, HttpResponse, LabelDim, RawItem, SourceDef
 from .pipeline import (Clock, ModelSession, _Budget, _FictionalData, _RunLog, _listing_for_issue,
                        _stamp, _stale_paths, cleanup_stale, model_client, preflight, rule_extract, run_lock, validate_delivery)
-from .sources.registry import P0_SOURCES
-from .sources.yc_directory import batch_order
+from .sources.registry import ALL_SOURCES
+from .sources.yc_directory import batch_order, canonical_latest_batches
 
 
 def _raw(data: dict) -> RawItem:
@@ -62,13 +62,15 @@ def run_replay(cfg: Config, args, clock) -> int:
         print(message, file=sys.stderr)
         return 3
     records = [(data, _raw(data)) for data in payload["items"]]
-    sources = {source.id: source for source in P0_SOURCES}
+    sources = {source.id: source for source in ALL_SOURCES}
     for data, item in records:
         if item.source_id not in sources:
             sources[item.source_id] = SourceDef(item.source_id, data.get("source_name", item.source_id),
                                                 "replay", item.url, "page", None, len(sources))
-    batches = sorted({str(item.structured["yc_batch"]) for _, item in records if item.structured.get("yc_batch")},
-                     key=batch_order, reverse=True)[:4]
+    batches = canonical_latest_batches(
+        (str(item.structured["yc_batch"]) for _, item in records if item.structured.get("yc_batch")),
+        as_of=day,
+    )
     with run_lock(cfg), tempfile.TemporaryDirectory(prefix="vcradar-replay-") as directory, placenames.place_audit(
             _RunLog(cfg.log_dir / f"{day}.log").write):
         cleanup_stale(cfg)

@@ -12,7 +12,8 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from vcradar.models import Card, CardSource, DigestData, ErrorType, PendingLine, SourceStatusLine
-from vcradar.render import ERROR_TEXT, first_lines, is_alarm, render_card, render_push, sort_cards
+from vcradar.render import ERROR_TEXT, first_lines, is_alarm, render_card, render_push, sort_cards, fetch_warning
+from vcradar import wording
 
 
 BASE = "https://vc.example.invalid/review"
@@ -63,12 +64,11 @@ def test_weekly_push_matches_new_structure(digest, tmp_path):
     ]))
     assert render_push(digest, links_file=links).splitlines() == [
         "10-30 周五 · 早期融资 · 本周",
-        "本周共 2 家：AI相关 2 · 社交/社群相关 0 · 新一轮 0 · 大额 1",
         "1. Flapping Airplanes【大额】｜公司开发人工智能模型。｜A 轮 · 10 亿美元｜"
         "[官网](https://flapping.example/) [来源](https://news.example.invalid/aster)",
         "2. Terse｜Terse 提供状态管理软件。｜种子轮 · 金额未披露｜"
         "[官网](https://terse.example/) [来源](https://news.example.invalid/aster)",
-        f"[看本周全部 2 家]({BASE}/#week)｜[来源网站状态]({BASE}/#sources)",
+        f"[看本周全部]({BASE}/#week)",
     ]
 
 
@@ -77,9 +77,8 @@ def test_pending_and_filtered_counts_are_in_first_line_not_lists(digest):
     digest.round_pending = [PendingLine("unknown", "Unknown", "$2M", "来源没写轮次")]
     digest.filtered = {"轮次不在范围": 4, "批次超过 12 个月": 1}
     text = render_push(digest)
-    assert text.splitlines()[1] == (
-        "本周共 6 家：AI相关 5 · 社交/社群相关 0 · 新一轮 0 · 大额 0"
-        " · 另有 1 家轮次待确认 · 已过滤 5 家")
+    assert text.splitlines()[1].startswith("1. AI0｜")
+    assert all(word not in text for word in ("本周共", "另有", "已过滤"))
     assert "Dream" not in text and "Unknown" not in text and "总部来源都没写" not in text
     assert len(highlights(text)) == 6 and "总部非美国" not in text
 
@@ -89,8 +88,9 @@ def test_ai_social_counts_include_combined_and_partially_confirmed_tags(digest):
                     card("Social", "社交", tag_label="社交/社群相关 + 标签待核"),
                     card("Unknown", "标签待核", tag_label="标签待核"),
                     card("New", "都不是", marks=["新一轮", "大额"])]
-    assert render_push(digest).splitlines()[1] == (
-        "本周共 5 家：AI相关 2 · 社交/社群相关 2 · 新一轮 1 · 大额 1")
+    text = render_push(digest)
+    assert text.splitlines()[1].startswith("1. New【新一轮】【大额】｜")
+    assert "本周共" not in text and len(highlights(text)) == 5
 
 
 @pytest.mark.parametrize("filtered_count", [0, 3])
@@ -99,7 +99,7 @@ def test_filtered_count_override_is_unique_company_total(digest, filtered_count)
     digest.filtered = {"批次超过 12 个月": 4, "轮次不在范围": 4}
     first = render_push(digest, filtered_count=filtered_count).splitlines()[1]
     assert "已过滤 8 家" not in first
-    assert (f"已过滤 {filtered_count} 家" in first) == (filtered_count > 0)
+    assert "已过滤" not in first and first.startswith("1. Aster｜")
     assert "另有" not in first
 
 
@@ -115,7 +115,7 @@ def test_ten_highlights_even_when_all_have_same_tag(digest):
     text = render_push(digest)
     rows = highlights(text)
     assert len(rows) == 10 and rows[0].startswith("1. Company16｜") and rows[-1].startswith("10. Company07｜")
-    assert "本周共 17 家" in text and f"[看本周全部 17 家]({BASE}/#week)" in text
+    assert "本周共" not in text and f"[看本周全部]({BASE}/#week)" in text
     assert all(old not in text for old in ("再看", "来源：", "领投", "#today", "AI相关 ·"))
 
 
@@ -173,7 +173,7 @@ def test_equal_amount_marks_and_first_seen_use_case_insensitive_name_for_tenth_p
     assert [company.name for company in sort_cards(digest.cards, first_seen=seen)] == list(reversed(names))
     rows = highlights(text)
     assert len(rows) == 10 and rows[0].startswith("1. Alpha｜") and rows[-1].startswith("10. juliet｜")
-    assert "Kilo｜" not in text and f"[看本周全部 11 家]({BASE}/#week)" in text
+    assert "Kilo｜" not in text and f"[看本周全部]({BASE}/#week)" in text
     digest.cards.reverse()
     assert render_push(digest, first_seen=seen) == text
 
@@ -229,20 +229,15 @@ def test_counts_and_ordered_hints_use_separate_lines(digest):
     digest.sources[1].missed_range = "10-24 09:00 至 10-26 08:30"
     digest.ts_stopped_notice = "封禁"
     digest.new_evidence_count = 3
-    expected = [
-        "提前推送", "重发", "本周有 2 天没抓到",
-        "TechCrunch 没抓到：对方限制了访问。本周汇总可能不全，不代表没有新公司。",
-        "Crunchbase News 没抓到：网站没响应。本周汇总可能不全，不代表没有新公司。",
-        "可能有遗漏：Crunchbase News，10-24 09:00 至 10-26 08:30的内容没抓全",
-        "Term Sheet 已停止抓取：对方封禁",
-        f"[本周 3 家资料有出入]({BASE}/#sources)",
-    ]
+    expected = ["TechCrunch、Crunchbase News 没抓到：网站出了问题。"
+                "本周汇总可能不全，不代表没有新公司。Term Sheet 没抓到：对方不再允许抓取。"
+                "本周汇总可能不全，不代表没有新公司。"]
     assert first_lines(digest, early_push=True, failed_days=2) == expected
     lines = render_push(digest, early_push=True, failed_days=2).splitlines()
     assert lines[0] == "10-30 周五 · 早期融资 · 本周"
-    assert lines[1] == "本周共 1 家：AI相关 1 · 社交/社群相关 0 · 新一轮 0 · 大额 0"
-    assert lines[2] == " · ".join(expected)
-    assert lines[3].startswith("1. Aster｜")
+    assert lines[1] == expected[0]
+    assert lines[1].count(wording.FETCH_WARNING_END) == 2
+    assert lines[2].startswith("1. Aster｜")
     assert is_alarm(digest, failed_days=2)
 
 
@@ -258,20 +253,14 @@ def test_complete_hint_order_and_punctuation_keep_count_line_separate(digest):
     digest.round_pending = [PendingLine("pending", "Dream", "$17M", "来源没写轮次")]
     options = {"early_push": True, "failed_days": 1, "incomplete_until": date(2026, 10, 27),
                "since_last_push": True}
-    expected = [
-        "首次运行收录 24 家以前的公司，不算新增", "本周一到 10-27 日的内容没抓全", "提前推送", "重发",
-        "本周有 1 天没抓到",
-        "TechCrunch 没抓到：网站没响应。本周汇总可能不全，不代表没有新公司。",
-        "可能有遗漏：TechCrunch，10-26 至 10-27的内容没抓全", "Term Sheet 已停止抓取：对方提出异议",
-        f"[上次推送后 2 家资料有出入]({BASE}/#sources)",
-    ]
+    expected = ["TechCrunch 没抓到：网站没响应。本周汇总可能不全，不代表没有新公司。"
+                "Term Sheet 没抓到：对方要求停止抓取。本周汇总可能不全，不代表没有新公司。"]
     assert first_lines(digest, **options) == expected
     lines = render_push(digest, **options).splitlines()
-    assert lines[1] == ("上次推送后共 1 家：AI相关 1 · 社交/社群相关 0 · 新一轮 0 · 大额 0"
-                        " · 另有 1 家轮次待确认")
-    assert lines[2] == " · ".join(expected)
-    assert lines[2].count("。") == 2
-    assert "。 · 可能有遗漏" in lines[2] and lines[3].startswith("1. Aster｜")
+    assert lines[1] == expected[0]
+    assert lines[1].count("。") == 4
+    assert "没抓全" not in "\n".join(lines) and lines[2].startswith("1. Aster｜")
+    assert "上次推送后" not in "\n".join(lines)
 
 
 def test_advance_title_uses_actual_weekday(digest):
@@ -279,8 +268,8 @@ def test_advance_title_uses_actual_weekday(digest):
     digest.cards = [card()]
     lines = render_push(digest, early_push=True).splitlines()
     assert lines[0] == "10-29 周四 · 早期融资 · 本周"
-    assert lines[1].startswith("本周共 1 家")
-    assert lines[2] == "提前推送" and not is_alarm(digest)
+    assert lines[1].startswith("1. Aster｜")
+    assert "提前推送" not in "\n".join(lines) and not is_alarm(digest)
 
 
 @pytest.mark.parametrize(("error", "expected"), [
@@ -288,34 +277,35 @@ def test_advance_title_uses_actual_weekday(digest):
     (ErrorType.UNREACHABLE, "News 没抓到：页面打不开。本周汇总可能不全，不代表没有新公司。"),
     (ErrorType.TIMEOUT, "News 没抓到：网站没响应。本周汇总可能不全，不代表没有新公司。"),
     (ErrorType.EMPTY, "News 没抓到：页面能打开，但一条都读不出来。本周汇总可能不全，不代表没有新公司。"),
-    (ErrorType.STALE, "News 可能没更新：最新一条是 2026-10-20 的。本周汇总可能不全，不代表没有新公司。"),
+    (ErrorType.STALE, "News 没抓到：最新一条还是 10-20 的。本周汇总可能不全，不代表没有新公司。"),
     (ErrorType.INTERCEPTED, "News 没抓到：被网站拦下来了。本周汇总可能不全，不代表没有新公司。"),
-    (ErrorType.YC_UNREADABLE, "YC 公司目录没抓到：读不到公司目录。本周汇总可能不全，不代表没有新公司。"),
-    (ErrorType.YC_DROP, "YC 公司目录可能出错：公司数量比上次少一半以上。本周汇总可能不全，不代表没有新公司。"),
+    (ErrorType.YC_UNREADABLE, "News 没抓到：读不到公司目录。本周汇总可能不全，不代表没有新公司。"),
+    (ErrorType.YC_DROP, "News 没抓到：公司数量比上次少了一半以上。本周汇总可能不全，不代表没有新公司。"),
     (ErrorType.NEWSLETTER_NO_DEALS, "News 没抓到：页面能打开，但读不到融资清单。本周汇总可能不全，不代表没有新公司。"),
-    (ErrorType.NEWSLETTER_STALE, "News 可能没更新：最新一期是 2026-10-20 的。本周汇总可能不全，不代表没有新公司。"),
+    (ErrorType.NEWSLETTER_STALE, "News 没抓到：最新一期还是 10-20 的。本周汇总可能不全，不代表没有新公司。"),
 ])
 def test_each_v16g_9_1_source_error_text(digest, error, expected):
     digest.sources = [SourceStatusLine("News", False, False, "", error, date(2026, 10, 20))]
     assert first_lines(digest) == [expected]
-    assert render_push(digest).splitlines()[2] == expected and is_alarm(digest)
+    assert render_push(digest).splitlines()[1] == expected
+    assert is_alarm(digest)
     assert error in ERROR_TEXT
 
 
-@pytest.mark.parametrize(("status", "prefix"), [("全部失败", "今天所有来源都没抓到"), ("没跑完", "今天没抓完")])
+@pytest.mark.parametrize(("status", "prefix"), [("全部失败", "所有来源都没抓到"), ("没跑完", "部分来源没抓到")])
 def test_failed_today_still_pushes_saved_weekly_cards(digest, status, prefix):
     digest.status = status
     digest.sources[0].ok = False
     digest.sources[0].error_type = ErrorType.TIMEOUT
     digest.cards = [card()]
     digest.new_evidence_count = 9
-    message = f"{prefix}：本周汇总按已有的数据发，今天的新公司可能没收进来。已通知维护的人，恢复后补上的放进下一期。"
+    message = wording.RUN_ERRORS[status]
     hints = first_lines(digest, failed_days=1)
-    assert hints == [message, "本周有 1 天没抓到", f"[本周 9 家资料有出入]({BASE}/#sources)"]
+    assert hints == [message] and message.startswith(prefix)
     text = render_push(digest, failed_days=1)
-    assert text.splitlines()[1].startswith("本周共 1 家：")
-    assert text.splitlines()[2] == " · ".join(hints)
-    assert len(highlights(text)) == 1 and "[看本周全部 1 家]" in text
+    assert text.splitlines()[1] == message
+    assert text.splitlines()[2].startswith("1. Aster｜")
+    assert len(highlights(text)) == 1 and "[看本周全部]" in text
     assert "没有结果" not in text and "不是没有新增" not in text and is_alarm(digest)
 
 
@@ -325,10 +315,10 @@ def test_failed_today_with_empty_database_does_not_hide_alarm(digest, status):
     digest.sources = [SourceStatusLine("News", False, False, "", ErrorType.TIMEOUT)]
     lines = render_push(digest).splitlines()
     assert lines[0].endswith("早期融资 · 本周")
-    assert "本周没有发现新的天使轮、种子轮、A 轮融资。" in lines[1]
-    assert "本周汇总按已有的数据发" in lines[2]
-    assert "全部正常" not in lines[3] and lines[3].startswith("已接入 1 个来源网站，其中 1 个出错")
-    assert lines[4] == f"[看本周全部 0 家]({BASE}/#week)｜[来源网站状态]({BASE}/#sources)"
+    assert lines[1] == wording.RUN_ERRORS[status]
+    assert lines[2] == wording.NO_NEW
+    assert len(lines) == 4 and lines[-1] == f"[看本周全部]({BASE}/#week)"
+    assert "已接入" not in "\n".join(lines)
     assert is_alarm(digest)
 
 
@@ -338,10 +328,10 @@ def test_first_issue_includes_baseline_current_cards_and_incomplete_coverage(dig
     digest.baseline_count = baseline_count
     digest.cards = [card()]
     lines = render_push(digest, incomplete_until=date(2026, 10, 27)).splitlines()
-    assert lines[1] == "本周共 1 家：AI相关 1 · 社交/社群相关 0 · 新一轮 0 · 大额 0"
-    assert lines[2] == ((f"首次运行收录 {baseline_count} 家以前的公司，不算新增 · " if baseline_count > 0 else "")
-                        + "本周一到 10-27 日的内容没抓全")
-    assert len(highlights("\n".join(lines))) == 1 and "[看本周全部 1 家]" in lines[-1]
+    assert lines[1].startswith("1. Aster｜")
+    assert all(phrase not in "\n".join(lines) for phrase in ("不算新增", "没抓全", "本周共"))
+    assert digest.baseline_count == baseline_count
+    assert len(highlights("\n".join(lines))) == 1 and "[看本周全部]" in lines[-1]
     assert "下一次推送" not in "\n".join(lines)
 
 
@@ -350,7 +340,7 @@ def test_zero_baseline_without_other_hints_omits_hint_line(digest):
     digest.cards = [card()]
     lines = render_push(digest).splitlines()
     assert first_lines(digest) == []
-    assert lines[1].startswith("本周共 1 家：") and lines[2].startswith("1. Aster｜")
+    assert lines[1].startswith("1. Aster｜") and len(lines) == 3
     assert "已收录" not in "\n".join(lines) and "" not in lines
 
 
@@ -360,8 +350,9 @@ def test_baseline_does_not_suppress_resend_or_current_errors(digest):
     digest.sources[0].ok = False
     digest.sources[0].error_type = ErrorType.TIMEOUT
     lines = render_push(digest, early_push=True).splitlines()
-    assert lines[1] == "本周没有发现新的天使轮、种子轮、A 轮融资。"
-    assert lines[2].startswith("提前推送 · 重发 · TechCrunch 没抓到：网站没响应。")
+    assert lines[1] == "TechCrunch 没抓到：网站没响应。本周汇总可能不全，不代表没有新公司。"
+    assert lines[2] == wording.NO_NEW
+    assert "提前推送" not in "\n".join(lines) and "重发" not in "\n".join(lines)
     assert "首次运行收录 0 家以前的公司，不算新增" not in "\n".join(lines) and is_alarm(digest)
 
 
@@ -374,15 +365,15 @@ def test_window_does_not_override_explicit_since_last_push(digest, duration, sin
     digest.new_evidence_count = 2
     lines = render_push(digest, since_last_push=since_last_push).splitlines()
     since = "上次推送后" if since_last_push else "本周"
-    assert lines[1].startswith(f"{since}共 1 家")
-    assert lines[2] == f"[{since} 2 家资料有出入]({BASE}/#sources)"
+    assert lines[1].startswith("1. Aster｜")
+    assert not any("资料有出入" in line or f"{since}共" in line for line in lines)
 
 
 def test_since_last_push_is_controlled_by_caller(digest):
     digest.cards = [card()]
     digest.new_evidence_count = 1
     lines = render_push(digest, since_last_push=True).splitlines()
-    assert lines[1].startswith("上次推送后共 1 家") and "上次推送后 1 家资料有出入" in lines[2]
+    assert lines[1].startswith("1. Aster｜") and "上次推送后" not in "\n".join(lines)
     assert not is_alarm(digest)
 
 
@@ -391,9 +382,9 @@ def test_legacy_evidence_label_cannot_override_since_last_push(digest, old_label
     digest.cards = [card()]
     digest.new_evidence_count = 2
     digest.new_evidence_since_label = old_label
-    assert render_push(digest).splitlines()[1].startswith("本周共 1 家")
-    assert first_lines(digest) == [f"[本周 2 家资料有出入]({BASE}/#sources)"]
-    assert first_lines(digest, since_last_push=True) == [f"[上次推送后 2 家资料有出入]({BASE}/#sources)"]
+    assert render_push(digest).splitlines()[1].startswith("1. Aster｜")
+    assert first_lines(digest) == []
+    assert first_lines(digest, since_last_push=True) == []
     digest.new_evidence_count = 0
     assert first_lines(digest) == []
 
@@ -404,10 +395,7 @@ def test_no_new_keeps_status_and_last_issue_before_footer(digest):
     assert render_push(digest).splitlines() == [
         "10-30 周五 · 早期融资 · 本周",
         "本周没有发现新的天使轮、种子轮、A 轮融资。",
-        "已接入 8 个来源网站，全部正常：TechCrunch 31 条 · Crunchbase News 21 条 · YC Launches 20 条 · "
-        "YC 公司目录 当期 193 家 · Launch HN 50 条 · StrictlyVC 最新一期 10-29 · AlleyWatch 10 条 · Term Sheet 最新一期 10-30",
-        "上一次有新公司是 10-23 那期，3 家",
-        f"[看本周全部 0 家]({BASE}/#week)｜[来源网站状态]({BASE}/#sources)",
+        f"[看本周全部]({BASE}/#week)",
     ]
     assert not is_alarm(digest)
 
@@ -418,28 +406,28 @@ def test_no_new_keeps_pending_summary_and_errors(digest):
     digest.sources[0].error_type = ErrorType.INTERCEPTED
     digest.round_pending = [PendingLine("dream", "Dream", "$17M", "来源没写轮次")]
     text = render_push(digest, filtered_count=2)
-    assert "另有 1 家轮次待确认 · 已过滤 2 家" in text.splitlines()[1]
-    assert "TechCrunch 没抓到：被网站拦下来了。本周汇总可能不全" in text.splitlines()[2]
-    assert "TechCrunch 未抓到" in text.splitlines()[3] and "全部正常" not in text and is_alarm(digest)
-    assert text.splitlines()[4] == f"[看本周全部 0 家]({BASE}/#week)｜[来源网站状态]({BASE}/#sources)"
+    assert "另有" not in text and "已过滤" not in text
+    assert "TechCrunch 没抓到：被网站拦下来了。本周汇总可能不全" in text.splitlines()[1]
+    assert text.splitlines()[2] == wording.NO_NEW and is_alarm(digest)
+    assert len(text.splitlines()) == 4 and text.splitlines()[-1] == f"[看本周全部]({BASE}/#week)"
 
 
-@pytest.mark.parametrize("reason,display_reason", [("封禁", "对方封禁"), ("异议", "对方提出异议")])
+@pytest.mark.parametrize("reason,display_reason", [("封禁", "对方不再允许抓取"), ("异议", "对方要求停止抓取")])
 def test_stopped_notice_only_in_requested_issue_and_stopped_source_not_stale(digest, reason, display_reason):
     digest.sources[-1] = SourceStatusLine("Term Sheet", False, True, "", ErrorType.NEWSLETTER_STALE)
     digest.ts_stopped_notice = reason
-    assert first_lines(digest) == [f"Term Sheet 已停止抓取：{display_reason}"] and is_alarm(digest)
+    assert first_lines(digest) == [f"Term Sheet 没抓到：{display_reason}" + wording.FETCH_WARNING_END] and is_alarm(digest)
     assert not is_alarm(digest, push=False)
     digest.ts_stopped_notice = None
     text = render_push(digest)
     assert first_lines(digest) == [] and not is_alarm(digest)
-    assert "已接入 8 个来源网站，其中 1 个已停止抓取：" in text
+    assert "已接入" not in text and len(text.splitlines()) == 3
     assert "Term Sheet 可能没更新" not in text and "全部正常" not in text
 
 
-def test_prior_failed_days_alarm_only_on_push_day(digest):
-    assert first_lines(digest, failed_days=2) == ["本周有 2 天没抓到"]
-    assert is_alarm(digest, failed_days=2) and not is_alarm(digest, failed_days=2, push=False)
+def test_prior_failed_days_alone_do_not_alarm(digest):
+    assert first_lines(digest, failed_days=2) == []
+    assert not is_alarm(digest, failed_days=2) and not is_alarm(digest, failed_days=2, push=False)
     assert "本周有" not in render_push(digest, failed_days=0).splitlines()[1]
 
 
@@ -461,13 +449,13 @@ def test_retry_success_resend_early_push_and_evidence_are_not_alarms(digest):
     digest.sources[-1].error_type = ErrorType.RATE_LIMITED
     digest.resend = True
     digest.new_evidence_count = 2
-    assert first_lines(digest, early_push=True) == ["提前推送", "重发", f"[本周 2 家资料有出入]({BASE}/#sources)"]
+    assert first_lines(digest, early_push=True) == []
     assert not is_alarm(digest)
 
 
 def test_missed_range_and_unknown_error_category(digest):
     digest.sources[0].missed_range = "10-20 至 10-23"
-    assert first_lines(digest) == ["可能有遗漏：TechCrunch，10-20 至 10-23的内容没抓全"]
+    assert first_lines(digest) == ["TechCrunch 没抓到：10-20 00:00 到 10-23 00:00 的内容没补上" + wording.FETCH_WARNING_END]
     digest.sources[0].ok = False
     assert "页面打不开" in first_lines(digest)[0]
 
@@ -479,14 +467,12 @@ def test_yc_new_batch_follows_highlights_and_precedes_links_without_taking_a_slo
     digest.last_push_summary = (date(2026, 10, 23), 3)
     lines = render_push(digest).splitlines()
     assert len(highlights("\n".join(lines))) == min(company_count, 10)
-    batch_index = 2 + min(company_count, 10)
-    assert lines[batch_index] == f"YC 新一批 193 家，[名单见网页]({BASE}/#yc)"
-    assert lines[-1] == (
-        f"[看本周全部 {company_count} 家]({BASE}/#week)｜[来源网站状态]({BASE}/#sources)")
+    assert lines[-2] == f"YC 新一批 193 家，[名单见网页]({BASE}/#yc)"
+    assert digest.yc_new_batch == ("Fall 2026", 193)
+    assert lines[-1] == f"[看本周全部]({BASE}/#week)"
     if company_count == 0:
         assert lines[1] == "本周没有发现新的天使轮、种子轮、A 轮融资。"
-        assert lines[batch_index + 1].startswith("已接入 8 个来源网站，全部正常：")
-        assert lines[batch_index + 2] == "上一次有新公司是 10-23 那期，3 家"
+        assert len(lines) == 4
 
 
 def test_page_card_keeps_three_lines_and_all_sources():
@@ -524,7 +510,7 @@ def test_page_disagreement_preserves_source_order_amounts_and_dates():
 
 def test_no_new_source_count_uses_names_not_fetch_addresses(digest):
     digest.sources.append(SourceStatusLine("TechCrunch", True, False, "12 条"))
-    assert "已接入 8 个来源网站，全部正常" in render_push(digest)
+    assert "已接入" not in render_push(digest) and len(render_push(digest).splitlines()) == 3
 
 
 def test_push_does_not_emit_old_structure_or_internal_technical_details(digest):

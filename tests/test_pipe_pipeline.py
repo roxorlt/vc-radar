@@ -121,7 +121,7 @@ def test_baseline_then_daily_accumulation_friday_and_same_day_idempotence(tmp_pa
     fixture = write_fixture(tmp_path / "fixture", old=True)
     first, first_path = run_at(cfg, fixture, "2026-10-26", first_issue=True)
     assert first["push"] is True and first["alarm"] is False
-    assert "首次运行收录 6 家以前的公司，不算新增" in first["text"]
+    assert "不算新增" not in first["text"] and len(first["text"].splitlines()) == 2
     assert not any(line.startswith("1.") for line in first["text"].splitlines())
     assert first_path.name.endswith("-first.json")
     assert len(rows(cfg, "company")) == 6
@@ -140,11 +140,11 @@ def test_baseline_then_daily_accumulation_friday_and_same_day_idempotence(tmp_pa
     write_fixture(fixture, "2026-10-30", new=["Birch"])
     weekly, _ = run_at(cfg, fixture, "2026-10-30")
     assert weekly["push"] is True and weekly["alarm"] is False
-    assert "本周共 1 家" in weekly["text"] and "Birch" in weekly["text"]
+    assert "本周共" not in weekly["text"] and "1. Birch" in weekly["text"]
     assert not any(row["pending"] for row in rows(cfg, "funding_event"))
     counts = [len(rows(cfg, table)) for table in ("company", "funding_event", "event_source")]
     rerun, _ = run_at(cfg, fixture, "2026-10-30")
-    assert "本周共 1 家" in rerun["text"] and rerun["text"].count("1. Birch") == 1
+    assert "本周共" not in rerun["text"] and rerun["text"].count("1. Birch") == 1
     assert counts == [len(rows(cfg, table)) for table in ("company", "funding_event", "event_source")]
     assert len([row for row in rows(cfg, "digest") if row["date"] == "2026-10-30"]) == 1
     assert not (cfg.state_dir / "vc-radar.db").exists()
@@ -156,7 +156,8 @@ def test_first_issue_current_week_and_undated_yc_and_scheduled_same_day(tmp_path
     cfg = Config(state_dir=tmp_path / "state", test_mode=True)
     fixture = write_fixture(tmp_path / "fixture", "2026-10-30")
     first, path = run_at(cfg, fixture, "2026-10-30", first_issue=True)
-    assert "本周共 5 家" in first["text"] and "首次运行收录 1 家以前的公司，不算新增" in first["text"]
+    assert "本周共" not in first["text"] and "不算新增" not in first["text"]
+    assert len([line for line in first["text"].splitlines() if line[:1].isdigit() and ". " in line]) == 5
     assert "Grove" not in first["text"]
     original = rows(cfg, "digest")
     scheduled, _ = run_at(cfg, fixture, "2026-10-30")
@@ -164,7 +165,7 @@ def test_first_issue_current_week_and_undated_yc_and_scheduled_same_day(tmp_path
     assert rows(cfg, "digest") == original
     assert first["text"] in capsys.readouterr().out and path.exists()
     rerun, _ = run_at(cfg, fixture, "2026-10-30", resend=True)
-    assert "本周共 5 家" in rerun["text"]
+    assert "本周共" not in rerun["text"] and rerun["text"] == first["text"]
 
 
 def test_term_sheet_stop_notice_same_day_resend_then_no_more_requests(tmp_path, monkeypatch):
@@ -180,17 +181,17 @@ def test_term_sheet_stop_notice_same_day_resend_then_no_more_requests(tmp_path, 
 
     monkeypatch.setattr(http, "FixtureTransport", capture)
     result, _ = run_at(cfg, fixture, "2026-10-30", first_issue=True)
-    assert "Term Sheet 已停止抓取：对方封禁" in result["text"] and result["alarm"] is True
+    assert "Term Sheet 已停止抓取" not in result["text"] and result["alarm"] is True
     records = [row for row in rows(cfg, "fetch_run") if row["source_id"] == "ts_web"]
     assert [row["result"] for row in records] == ["失败", "已停抓"]
     assert records[-1]["ended_at"] <= "2026-10-30T08:45:00+08:00"
     source = next(row for row in rows(cfg, "source") if row["id"] == "ts_web")
-    assert source["stop_notice_date"] == "2026-10-30"
+    assert source["stop_notice_date"] is None
     assert rows(cfg, "digest")[0]["status"] != "部分失败"
     again, _ = run_at(cfg, fixture, "2026-10-30", resend=True)
     resend, path = run_at(cfg, fixture, "2026-10-30", resend=True, dry_run=True)
-    assert "Term Sheet 已停止抓取：对方封禁" in again["text"] and "Term Sheet 已停止抓取：对方封禁" in resend["text"]
-    assert "重发" in resend["text"].splitlines()[2].split(" · ") and path.name.endswith("-first-resend-2.json")
+    assert "Term Sheet 已停止抓取" not in again["text"] + resend["text"]
+    assert "重发" not in resend["text"] and path.name.endswith("-first-resend-2.json")
     assert not any(entry["url"].startswith("https://content.fortune.com/") for client in clients[1:] for entry in client.request_log)
     write_fixture(fixture, "2026-11-02", stopped=True)
     daily, _ = run_at(cfg, fixture, "2026-11-02")
@@ -223,7 +224,8 @@ def test_total_timeout_keeps_file_and_marks_unfinished_addresses(tmp_path):
     started = time.monotonic()
     result, path = run_at(cfg, fixture, "2026-10-30")
     assert time.monotonic() - started < .8 and path.exists()
-    assert "今天没抓完" in result["text"] and result["alarm"] is True and result["push"] is True
+    assert "没抓到：" in result["text"] and result["alarm"] is True and result["push"] is True
+    assert result["text"].count("本周汇总可能不全，不代表没有新公司。") == 1
     assert any(row["result"] == "没轮到" for row in rows(cfg, "fetch_run"))
 
 
@@ -236,7 +238,7 @@ def test_calendar_early_push_holiday_and_adjusted_weekend(tmp_path, day, push, f
     assert result["push"] is push
     assert bool(rows(cfg, "fetch_run")) is fetch
     if day == "2026-09-30":
-        assert "提前推送" in result["text"]
+        assert "提前推送" not in result["text"] and result["text"].startswith("09-30 周三 · 早期融资 · 本周")
     if not fetch:
         assert rows(cfg, "digest")[0]["status"] == "非推送日"
 
@@ -280,7 +282,14 @@ def test_lock_is_exclusive_and_test_lock_separate(tmp_path):
                 pass
 
 
-def test_replay_is_isolated_and_validates_fixed_evidence(tmp_path, capsys):
+def test_replay_is_isolated_and_validates_fixed_evidence(tmp_path, capsys, monkeypatch):
+    captured = []
+    from vcradar import render
+    render_push = render.render_push
+    def capture(data, **kwargs):
+        captured.append(data)
+        return render_push(data, **kwargs)
+    monkeypatch.setattr(render, "render_push", capture)
     cfg_path = tmp_path / "config.toml"
     state = tmp_path / "state"
     cfg_path.write_text(f'state_dir = "{state}"\n')
@@ -288,10 +297,11 @@ def test_replay_is_isolated_and_validates_fixed_evidence(tmp_path, capsys):
     outputs = list((state / "outbox-test").glob("*.json"))
     assert len(outputs) == 1
     text = json.loads(outputs[0].read_text())["text"]
-    assert "本周共 2 家" in text and "已过滤" not in text
+    assert "本周共" not in text and "已过滤" not in text
     assert "Composal｜" in text
     assert "TechCrunch 写 1200 万美元，Crunchbase News 写 1600 万美元" in text
-    assert text.count("2. Aster") == 1 and "AI相关 1" in text
+    assert text.count("2. Aster") == 1 and "AI相关 1" not in text
+    assert sum("AI相关" in c.tag_label for c in captured[-1].cards) == 1
     assert not list(state.rglob("*.db")) and not (state / "outbox").exists()
     assert text in capsys.readouterr().out
 

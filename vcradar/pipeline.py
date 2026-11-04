@@ -26,17 +26,14 @@ from .config import BJ, Config, UA
 from .guard import check_no_fictional, check_no_placeholder
 from .models import DigestData, FetchResult, HttpResponse
 from .robots import RobotsChecker
-from .sources.registry import P0_SOURCES
-from .sources.yc_directory import batch_order
+from .sources.registry import ALL_SOURCES, DISPLAY_ORDER, P0_SOURCES, display_rank
+from .sources.yc_directory import batch_order, canonical_latest_batches
 
 _FUNDING = re.compile(
     r"raise[sd]?|funding|seed|pre-seed|Series [A-Z]|\$\d[\d.]*\s?(?:M|B|million|billion)|"
     r"backs|lands|led by|investment", re.I,
 )
-_SOURCE_ORDER = {name: n for n, name in enumerate((
-    "TechCrunch", "Crunchbase News", "YC Launches", "YC 公司目录", "Launch HN",
-    "StrictlyVC", "AlleyWatch", "Term Sheet",
-))}
+_SOURCE_ORDER = {name: n for n, name in enumerate(DISPLAY_ORDER)}
 
 
 class Clock:
@@ -242,7 +239,7 @@ class ModelSession:
 
 def _peak(stamp):
     hour = stamp.hour + stamp.minute / 60
-    return stamp.weekday() < 5 and cal.is_cn_workday(stamp.date()) and (9 <= hour < 12 or 14 <= hour < 18)
+    return stamp.weekday() < 5 and cal.is_cn_workday_or_weekday(stamp.date()) and (9 <= hour < 12 or 14 <= hour < 18)
 
 
 @contextmanager
@@ -310,9 +307,10 @@ def _stamp(value):
 
 
 def _first_file(cfg, day):
-    paths = list(cfg.outbox_dir.glob(f"{day}-*-first.json")) if cfg.test_mode else [outbox.first_path(cfg.outbox_dir, day)]
-    paths = [path for path in paths if path.is_file()]
-    return max(paths, key=lambda path: path.stat().st_mtime_ns, default=None)
+    if cfg.test_mode:
+        return _test_issue_file(cfg, day, first=True)
+    path = outbox.first_path(cfg.outbox_dir, day)
+    return path if path.is_file() else None
 
 
 def _on_first_day(cfg, day):
@@ -523,10 +521,70 @@ def _main_file(cfg, day):
     if not cfg.test_mode:
         path = outbox.main_path(cfg.outbox_dir, day)
         return path if path.exists() else None
-    pattern = re.compile(re.escape(str(day)) + r"-\d{6}\.json")
-    paths = [path for path in cfg.outbox_dir.glob(f"{day}-*.json") if pattern.fullmatch(path.name)]
-    paths = [path for path in paths if json.loads(path.read_text()).get("push") is True]
-    return max(paths, key=lambda path: _stamp(json.loads(path.read_text())["generated_at"]), default=None)
+    return _test_issue_file(cfg, day, first=False)
+
+
+def _push_handoffs(cfg, today):
+    # 只识别普通主文件和首期文件；重发、预览、补充清单均不属于判定范围。
+    pattern = re.compile(r"(\d{4}-\d{2}-\d{2})" + (r"-\d{6}" if cfg.test_mode else "") + r"(-first)?\.json")
+    records = []
+    for path in cfg.outbox_dir.glob("*.json"):
+        match = pattern.fullmatch(path.name)
+        if not match or not path.is_file():
+            continue
+        try:
+            day = date.fromisoformat(match[1])
+            if day > today:
+                continue
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(payload, dict) and payload.get("push") is True:
+            records.append((day, path, payload, bool(match[2])))
+    return records
+
+
+def _test_issue_file(cfg, day, *, first):
+    records = [record for record in _push_handoffs(cfg, day) if record[0] == day and record[3] == first]
+    return max((record[1] for record in records), key=lambda path: path.name, default=None)
+
+
+def _latest_handoff(cfg, today):
+    records = _push_handoffs(cfg, today)
+    if not records:
+        return None
+    latest = max(record[0] for record in records)
+    records = [record for record in records if record[0] == latest]
+    if cfg.test_mode:
+        ordinary = [record for record in records if not record[3]]
+        # 普通文件只在自己的 HHMMSS 范围取最大；首期使用自己的同主名回执。
+        return max(ordinary or records, key=lambda record: record[1].name)
+    if any(record[3] for record in records):
+        records = [record for record in records if record[3]]
+    received = [record for record in records if record[1].with_suffix(".sent").is_file()]
+    return max(received or records, key=lambda record: record[1].name)
+
+
+def _record_ts_notice(conn, cfg, today):
+    """仅按最近已生成推送主文件的真实回执记录停抓提示日期。"""
+    row = conn.execute("SELECT 1 FROM source WHERE id='ts_web' AND crawl_status='已停抓' "
+                       "AND (stop_notice_date IS NULL OR stop_notice_date='')").fetchone()
+    if row is None:
+        return
+    handoff = _latest_handoff(cfg, today)
+    if handoff is None:
+        return
+    day, path, payload, _ = handoff
+    try:
+        receipt = outbox._read_receipt(path.with_suffix(".sent"))
+        sent_day = _stamp(receipt.get("sent_at")).date() if receipt.get("sent_at") else None
+    except (OSError, ValueError, TypeError, AttributeError):
+        return
+    phrases = ("Term Sheet 没抓到：对方不再允许抓取。", "Term Sheet 没抓到：对方要求停止抓取。")
+    if (receipt.get("result") == "ok" and sent_day == day and "兜底" not in str(receipt.get("note", ""))
+            and isinstance(payload.get("text"), str) and any(phrase in payload["text"] for phrase in phrases)):
+        conn.execute("UPDATE source SET stop_notice_date=? WHERE id='ts_web' AND crawl_status='已停抓' "
+                     "AND (stop_notice_date IS NULL OR stop_notice_date='')", (str(day),))
 
 
 def _source_lines(outcomes, states):
@@ -535,17 +593,49 @@ def _source_lines(outcomes, states):
         groups[outcome.source.name].append(outcome)
     from .models import SourceStatusLine
     lines = []
-    for name, group in sorted(groups.items(), key=lambda pair: _SOURCE_ORDER.get(pair[0], 99)):
+    for name, group in sorted(groups.items(), key=lambda pair: min(display_rank(o.source.id) for o in pair[1])):
         active = [o for o in group if not (o.stopped_now or states[o.source.id].crawl_status == "已停抓")]
         failed = [o for o in active if not o.ok]
         count = sum(o.runs[-1].count if o.runs else 0 for o in active)
         label = f"{count} 条" if all(o.source.kind == "rss" for o in group) else next(
             (o.latest_label for o in group if o.latest_label), f"{count} 条")
         latest = max((o.latest_beijing_date for o in group if o.latest_beijing_date), default=None)
-        missed = "；".join(dict.fromkeys(o.missed_range for o in active if o.missed_range))
+        baseline = next((states[o.source.id].baseline_at for o in active if states[o.source.id].baseline_at), None)
+        missed, start, end = fetcher.merge_missed_ranges(
+            [(o.missed_range, o.missed_start, o.missed_end) for o in active],
+            baseline,
+            reference=max((r.started_at for o in active for r in o.runs), default=None))
         lines.append(SourceStatusLine(name, not failed, not active, label,
-                                      failed[0].error_type if failed else None, latest, missed))
+                                      failed[0].error_type if failed else None, latest, missed,
+                                      start, end,
+                                      min(group, key=lambda o: display_rank(o.source.id)).source.id))
     return lines
+
+
+def _with_missed_history(conn, lines, window_start, window_end):
+    """并入推送日当天库里已有的漏抓段（PRD L702「报警行只看推送日当天」；13-#48 ③ 插入行按推送日当天的运行记录处理）。"""
+    from .models import SourceStatusLine
+    day_start = datetime.combine(window_end.astimezone(BJ).date(), datetime.min.time(), BJ)
+    window_start = day_start if window_start is None or window_start < day_start else window_start
+    grouped = {line.name: replace(line) for line in lines}
+    segments = defaultdict(list)
+    for line in lines:
+        if not line.stopped:
+            segments[line.name].append((line.missed_range, line.missed_start, line.missed_end))
+    for row in scan.missed_runs_in_window(conn, window_start, window_end):
+        name, source_id = row["name"], row["source_id"]
+        line = grouped.setdefault(name, SourceStatusLine(name, True, False, "", source_id=source_id))
+        if line.stopped:
+            continue
+        if line.source_id is None or display_rank(source_id) < display_rank(line.source_id):
+            line.source_id = source_id
+        segments[name].append((row["missed_range"], row["missed_start"], row["missed_end"]))
+    baseline = db.first_issue_generated_at(conn)
+    for name, spans in segments.items():
+        line = grouped[name]
+        line.missed_range, line.missed_start, line.missed_end = fetcher.merge_missed_ranges(
+            spans, baseline, reference=window_end)
+    return sorted(grouped.values(), key=lambda line: (display_rank(line.source_id), line.name))
 
 
 class _Paragraphs(HTMLParser):
@@ -712,16 +802,21 @@ def _resend_fields(cfg, day):
 
 
 def sync_sent(conn, cfg: Config, day: date) -> None:
-    """用 core 读取回执；首期当天单独统计 first-resend 次数和最大 N 回执。"""
-    receipts = outbox.read_sent(cfg.outbox_dir, day)
-    main = receipts["first"] or receipts["main"]
-    first = _first_file(cfg, day)
-    if cfg.test_mode and first is not None and first.with_suffix(".sent").exists():
-        main = json.loads(first.with_suffix(".sent").read_text())
-    values = _resend_fields(cfg, day)
+    """回写普通或首期主文件及重发回执，随后按主文件确认停抓提示日期。"""
+    if cfg.test_mode:
+        handoff = _latest_handoff(cfg, day)
+        target = handoff[0] if handoff else day
+        path = handoff[1].with_suffix(".sent") if handoff else None
+        main = outbox._read_receipt(path) if path is not None and path.is_file() else None
+    else:
+        target = day
+        receipts = outbox.read_sent(cfg.outbox_dir, day)
+        main = receipts["first"] or receipts["main"]
+    values = _resend_fields(cfg, target)
     if main:
         values.update(sent_at=main.get("sent_at"), sent_result=main.get("result"))
     scan.upsert_digest(conn, values)
+    _record_ts_notice(conn, cfg, day)
 
 
 def _resend(conn, cfg, args, clock, today):
@@ -744,6 +839,9 @@ def _resend(conn, cfg, args, clock, today):
                   text=text, test=cfg.test_mode, real_now=datetime.now(BJ))
     scan.upsert_digest(conn, _resend_fields(cfg, today))
     conn.commit()
+    from .site import write_status
+    write_status(conn, cfg, clock.now(), runtime={"date": str(today), "push": True, "alarm": payload["alarm"],
+        "outbox": str(path), "simulated": bool(clock.simulated)})
     print(path)
     return 0
 
@@ -771,8 +869,8 @@ def _status(outcomes, lines, listing, incomplete):
 
 
 def _successful_sources(outcomes, states):
-    enabled_p0 = {source.id for source in P0_SOURCES}
-    return {outcome.source.name for outcome in outcomes if outcome.source.id in enabled_p0 and outcome.ok
+    enabled_ids = {source.id for source in ALL_SOURCES}
+    return {outcome.source.name for outcome in outcomes if outcome.source.id in enabled_ids and outcome.ok
             and not outcome.stopped_now and states[outcome.source.id].crawl_status != "已停抓"}
 
 
@@ -788,7 +886,6 @@ def _ts_notice(conn, today, push):
         return None
     row = conn.execute("SELECT * FROM source WHERE id='ts_web' AND crawl_status='已停抓'").fetchone()
     if row is not None and row["stop_notice_date"] in (None, "", today.isoformat()):
-        conn.execute("UPDATE source SET stop_notice_date=? WHERE id='ts_web'", (today.isoformat(),))
         return row["stop_reason"] or "封禁"
     return None
 
@@ -829,12 +926,12 @@ def _after_handoff(conn, cfg, args, clock, today, source_bodies):
         except Exception:
             pass
 
-    def build(conn, cfg, clock, company_id=None, run_date=None):
+    def build(conn, cfg, clock, company_id=None, run_date=None, *, slot=None):
         try:
-            site.build_site(conn, cfg, now=clock.now())
             online = clock.now()
-            with conn:
-                conn.execute("UPDATE deepdive SET online_at=? WHERE status='完成' AND online_at IS NULL", (online.isoformat(),))
+            conn.execute("UPDATE deepdive SET online_at=? WHERE status='完成' AND online_at IS NULL", (online.isoformat(),))
+            site.build_site(conn, cfg, now=online, snapshot_slot=slot)
+            conn.commit()
             record({"event": "site_built", "at": online.isoformat(), "company_id": company_id})
             return online
         except Exception:
@@ -847,8 +944,11 @@ def _after_handoff(conn, cfg, args, clock, today, source_bodies):
         build(conn, cfg, clock)
         if args.no_deep or not cal.is_cn_workday(today):
             return
+        def checkpoint(conn, cfg, clock):
+            slot = "1030" if clock.now().time() >= args.deep_final else "0930"
+            return build(conn, cfg, clock, slot=slot)
         deep.run_for_today(conn, cfg, clock, fixture=args.fixture, source_bodies=source_bodies,
-                           publish=build, checkpoint=build,
+                           publish=build, checkpoint=checkpoint,
                            deep_deadline=datetime.combine(today, args.deep_deadline, tzinfo=BJ),
                            deep_final=datetime.combine(today, args.deep_final, tzinfo=BJ))
     except Exception as exc:
@@ -873,10 +973,18 @@ def run(cfg: Config, args, clock) -> int:
         print("--prod-rules 不能与 --first-issue 同用", file=sys.stderr)
         return 2
     clock = _ClockView(clock, args.date is not None or args.now is not None)
+    today = args.date if cfg.test_mode and args.date is not None else clock.now().date()
     if args.deep_only:
+        if cfg.db_path.exists():
+            with db.connect(cfg.db_path) as conn:
+                _record_ts_notice(conn, cfg, today)
         from .deep import run_cli
-        return run_cli(cfg, args, clock)
-    today = clock.now().date()
+        result = run_cli(cfg, args, clock)
+        if cfg.db_path.exists():
+            from .site import write_status
+            with db.connect(cfg.db_path) as conn:
+                write_status(conn, cfg, clock.now())
+        return result
     if message := preflight(cfg, args, today):
         if _stale_paths(cfg):
             with run_lock(cfg):
@@ -897,9 +1005,13 @@ def run(cfg: Config, args, clock) -> int:
             return _first_issue(cfg, args, clock, today)
         conn = db.connect(cfg.db_path)
         try:
+            _record_ts_notice(conn, cfg, today)
+            conn.commit()
             if args.sync_sent:
                 sync_sent(conn, cfg, today)
                 conn.commit()
+                from .site import write_status
+                write_status(conn, cfg, clock.now())
                 if not cfg.test_mode:
                     db.backup(conn, cfg.state_dir / "backup" / f"vc-radar-{today:%Y%m%d}.db")
                 return 0
@@ -943,21 +1055,7 @@ def _run_connected(conn, cfg, args, clock, today):
         return _run_connected_with_log(conn, cfg, args, clock, today)
 
 
-def _run_connected_with_log(conn, cfg, args, clock, today):
-    log = _RunLog(cfg.log_dir / f"{today}.log")
-    try:
-        workday = cal.is_cn_workday(today)
-        scheduled = cal.is_push_day(today, cfg.push_mode, cfg.push_weekday, cfg.holiday_shift)
-    except cal.CalendarMissing:
-        log.write({"event": "environment_missing", "reason": "缺少日历", "date": str(today)})
-        validate_delivery(conn, "", test_mode=cfg.test_mode)
-        outbox.write_main(cfg.outbox_dir, today, push=False, alarm=True, generated_at=clock.now(), text="", test=cfg.test_mode, real_now=datetime.now(BJ))
-        return 5
-    first_file = _first_file(cfg, today)
-    anchor = first_file if args.first_issue or (args.resend and first_file is not None) else _main_file(cfg, today)
-    original = json.loads(anchor.read_text()) if anchor is not None else None
-    push = args.first_issue or (workday and scheduled and first_file is None)
-    existing = conn.execute("SELECT * FROM digest WHERE date=?", (today.isoformat(),)).fetchone()
+def _issue_window(conn, cfg, today, existing=None):
     window = outbox.last_push_generated_at(cfg.outbox_dir, today)
     if cfg.test_mode:
         previous = conn.execute("SELECT generated_at FROM digest WHERE push=1 AND date<? AND generated_at IS NOT NULL ORDER BY date DESC LIMIT 1", (str(today),)).fetchone()
@@ -965,12 +1063,37 @@ def _run_connected_with_log(conn, cfg, args, clock, today):
             window = _stamp(previous[0])
     if existing and existing["window_start"]:
         window = _stamp(existing["window_start"])
+    return window
+
+
+def _run_connected_with_log(conn, cfg, args, clock, today):
+    today = args.date if cfg.test_mode and args.date is not None else today
+    _record_ts_notice(conn, cfg, today)
+    log = _RunLog(cfg.log_dir / f"{today}.log")
+    try:
+        workday = cal.is_cn_workday(today)
+        scheduled = cal.is_push_day(today, cfg.push_mode, cfg.push_weekday, cfg.holiday_shift)
+    except cal.CalendarMissing:
+        log.write({"event": "environment_missing", "reason": "缺少日历", "date": str(today)})
+        validate_delivery(conn, "", test_mode=cfg.test_mode)
+        path = outbox.write_main(cfg.outbox_dir, today, push=False, alarm=True, generated_at=clock.now(), text="", test=cfg.test_mode, real_now=datetime.now(BJ))
+        from .site import write_status
+        write_status(conn, cfg, clock.now(), runtime={"date": str(today), "status": "环境缺失", "push": False,
+            "alarm": True, "outbox": str(path), "simulated": bool(clock.simulated)})
+        return 5
+    first_file = _first_file(cfg, today)
+    anchor = first_file if args.first_issue or (args.resend and first_file is not None) else _main_file(cfg, today)
+    original = json.loads(anchor.read_text()) if anchor is not None else None
+    push = args.first_issue or (workday and scheduled and first_file is None)
+    existing = conn.execute("SELECT * FROM digest WHERE date=?", (today.isoformat(),)).fetchone()
+    window = _issue_window(conn, cfg, today, existing)
     budget = _Budget(cfg, clock, scheduled=not args.first_issue and not (
         cfg.test_mode and args.now is not None and args.now >= daytime(8, 50)))
-    db.sync_sources(conn, P0_SOURCES)
+    configured_sources = ALL_SOURCES if (cfg.enable_extended_sources or getattr(args, "extended_sources", False)) else P0_SOURCES
+    db.sync_sources(conn, configured_sources)
     initial = db.is_empty(conn)
     states = db.load_source_states(conn)
-    sources = [source for source in P0_SOURCES if conn.execute("SELECT enabled FROM source WHERE id=?", (source.id,)).fetchone()[0]]
+    sources = [source for source in configured_sources if conn.execute("SELECT enabled FROM source WHERE id=?", (source.id,)).fetchone()[0]]
     outcomes, entries = [], []
     incomplete = False
     coverage_key = f"pipe:first_incomplete:{scan.baseline_cutoff(today)}"
@@ -1007,8 +1130,10 @@ def _run_connected_with_log(conn, cfg, args, clock, today):
                         record.is_backfill = False
                     if outcome.source.id == "yc_launches" and states[outcome.source.id].known_external_ids == set():
                         outcome.missed_range = ""
+                        outcome.missed_start = outcome.missed_end = None
                         for record in outcome.runs:
                             record.missed_range = ""
+                            record.missed_start = record.missed_end = None
                 known_latest = states[outcome.source.id].last_latest_at
                 if known_latest and "上次已知最新时间（状态未提供）" in outcome.missed_range:
                     outcome.missed_range = outcome.missed_range.replace("上次已知最新时间（状态未提供）", known_latest.strftime("%Y-%m-%d %H:%M"))
@@ -1041,7 +1166,10 @@ def _run_connected_with_log(conn, cfg, args, clock, today):
             _article_bodies(entries, source_map, transport, robots, cfg, clock, budget)
         finally:
             transport.close()
-        batches = sorted({str(item.structured["yc_batch"]) for outcome in outcomes for item in outcome.items if item.structured.get("yc_batch")}, key=batch_order, reverse=True)[:4]
+        batches = canonical_latest_batches(
+            (str(item.structured["yc_batch"]) for outcome in outcomes for item in outcome.items if item.structured.get("yc_batch")),
+            as_of=today,
+        )
         raw_client = (_MissingModel(cfg.model) if cfg.test_mode and not args.fixture else
                       model_client(cfg, args.fixture, len(entries)))
         if isinstance(raw_client, _MissingModel):
@@ -1090,10 +1218,18 @@ def _run_connected_with_log(conn, cfg, args, clock, today):
     previous_ids = json.loads(existing["event_ids_json"]) if existing and existing["push"] else []
     sent = (anchor is not None and anchor.with_suffix(".sent").exists()) or (
         not cfg.test_mode and not args.first_issue and not args.resend and (cfg.outbox_dir / f"{today}.sent").exists())
+    if cfg.test_mode:
+        acknowledged = outbox.test_sent_file(cfg.outbox_dir, today)
+        sent = acknowledged is not None
+        if sent and anchor is None:
+            anchor = _first_file(cfg, today) or acknowledged
+            original = json.loads(anchor.read_text())
     frozen = previous_ids if sent or (args.resend and existing) else None
     listing = _listing_for_issue(conn, today, previous_ids, only_ids=frozen)
     lines = _source_lines(outcomes, states)
     status = _status(outcomes, lines, listing, incomplete) if workday or args.first_issue else "非推送日"
+    if (push or args.resend) and not args.first_issue:
+        lines = _with_missed_history(conn, lines, window, generated)
     if args.first_issue and (status == "没跑完" or not _successful_sources(outcomes, states)):
         raise RuntimeError("首期没跑完或成功信源数为 0")
     if args.first_issue:
@@ -1112,6 +1248,7 @@ def _run_connected_with_log(conn, cfg, args, clock, today):
                       last_push_summary=_last_summary(conn, today),
                       base_url=render.link_base_url(cfg.base_url, cfg.link_path_template, today),
                       review_site_passed=cfg.review_site_passed, extra_sections=sections)
+    data.baseline_at = db.first_issue_generated_at(conn)
     text = render.render_push(data, early_push=cal.is_early_push(today), failed_days=failed_days,
                               incomplete_until=incomplete_until if args.first_issue else None,
                               since_last_push=cal.since_last_push(window.date() if window else None, today),
@@ -1143,7 +1280,15 @@ def _run_connected_with_log(conn, cfg, args, clock, today):
     # 首期替代当日定时推送，日期主键的 digest 保留首期记录。
     notes = "；".join(f"{name}：{detail}" for name, detail in incomplete_sources.items())
     if (first_file is None or args.first_issue) and not (args.resend and existing):
+        counts = _digest_counts(data, listing, push=bool(push or args.resend), failed_days=failed_days,
+                                first_issue=args.first_issue, incomplete_until=incomplete_until)
+        if sent and existing:
+            counts = json.loads(existing["counts_json"])
+        log.write({"event": "digest_counts", "date": str(today), "counts": counts})
         digest_row = {"date": today, "push": bool(push or args.resend), "status": status,
+                                  "counts_json": counts,
+                                  "card_sources_json": existing["card_sources_json"] if sent and existing else
+                                  _card_source_snapshot(conn, listing["event_ids"] + supplement_ids) if push or args.resend else {},
                                   "error_sources": [line.name for line in lines if not line.ok and not line.stopped],
                                   "event_ids": listing["event_ids"] if push or args.resend else [], "text": text,
                                   "supplement_event_ids_json": supplement_ids,
@@ -1158,11 +1303,11 @@ def _run_connected_with_log(conn, cfg, args, clock, today):
     _cleanup_raw(cfg.raw_dir, today)
     if not cfg.test_mode and args.first_issue:
         db.backup(conn, cfg.state_dir / "backup" / f"vc-radar-{today:%Y%m%d}.db")
-    status_dir = cfg.state_dir / "test" if cfg.test_mode else cfg.state_dir
-    outbox.write_atomic(status_dir / "status.json", {"date": str(today), "status": status, "push": bool(push or args.resend),
-                                                    "alarm": alarm, "outbox": str(path), "simulated": bool(clock.simulated),
-                                                    "fx": {**fx_rates.status, "currencies": sorted({c for entry in fx_rates.cache["days"].values() for c in entry["rates"]})}
-                                                    if fx_rates else fx.status_from_files(cfg)})
+    from .site import write_status
+    write_status(conn, cfg, clock.now(), runtime={"date": str(today), "status": status, "push": bool(push or args.resend),
+        "alarm": alarm, "outbox": str(path), "simulated": bool(clock.simulated),
+        "fx": {**fx_rates.status, "currencies": sorted({c for entry in fx_rates.cache["days"].values() for c in entry["rates"]})}
+        if fx_rates else fx.status_from_files(cfg)})
     log.write({"event": "run_end", "status": status, "push": bool(push or args.resend), "simulated": bool(clock.simulated)})
     if args.first_issue and budget.remaining() <= 0:
         raise RuntimeError("首期总超时")
@@ -1173,31 +1318,99 @@ def _run_connected_with_log(conn, cfg, args, clock, today):
 
 
 def _failure_file(conn, cfg, args, clock, today):
+    today = args.date if cfg.test_mode and args.date is not None else today
+    _record_ts_notice(conn, cfg, today)
     log = _RunLog(cfg.log_dir / f"{today}.log")
     log.write({"event": "run_error", "date": str(today)})
-    listing = _listing_for_issue(conn, today)
-    digest = DigestData(today, None, clock.now(), "全部失败", cards=listing["cards"],
+    push = args.first_issue or args.resend or cal.is_push_day(today)
+    existing = conn.execute("SELECT * FROM digest WHERE date=?", (str(today),)).fetchone()
+    anchor = _first_file(cfg, today) if args.first_issue else _main_file(cfg, today)
+    sent = (anchor is not None and anchor.with_suffix(".sent").exists()) or (
+        not cfg.test_mode and (cfg.outbox_dir / f"{today}.sent").exists())
+    if cfg.test_mode:
+        acknowledged = outbox.test_sent_file(cfg.outbox_dir, today)
+        sent = acknowledged is not None
+        if sent and anchor is None:
+            anchor = _first_file(cfg, today) or acknowledged
+    previous_ids = json.loads(existing["event_ids_json"]) if existing and existing["push"] else []
+    frozen = previous_ids if sent or (args.resend and existing) else None
+    listing = _listing_for_issue(conn, today, previous_ids, only_ids=frozen)
+    window = _issue_window(conn, cfg, today, existing)
+    failed_days = scan.failed_days_in_window(conn, window, today, outbox_dir=cfg.outbox_dir) if push else 0
+    from .backfill import collect_supplement, mark_supplement
+    previous_supplement = json.loads(existing["supplement_event_ids_json"]) if existing and existing["push"] else []
+    sections, supplement_ids = collect_supplement(conn, cfg, today,
+        event_ids=previous_supplement or ([] if sent or args.resend and existing else None)) if push else ([], [])
+    digest = DigestData(today, window, clock.now(), "全部失败", cards=listing["cards"],
                         round_pending=listing["round_pending"],
                         filtered=listing["filtered"],
+                        baseline_count=scan.baseline_company_count(conn) if args.first_issue else 0,
+                        extra_sections=sections,
                         base_url=render.link_base_url(cfg.base_url, cfg.link_path_template, today),
                         review_site_passed=cfg.review_site_passed)
-    push = args.first_issue or args.resend or cal.is_push_day(today)
+    if push and not args.first_issue:
+        digest.sources = _with_missed_history(conn, [], window, digest.window_end)
+    digest.baseline_at = db.first_issue_generated_at(conn)
+    digest.ts_stopped_notice = _ts_notice(conn, today, push)
     text = render.render_push(digest, filtered_count=listing["filtered_total"], first_seen=listing["first_seen"],
                               links_file=cfg.links_file) if push else ""
+    if sent and not args.resend and anchor is not None:
+        original = json.loads(anchor.read_text())
+        text = original["text"]
+        digest.window_end = _stamp(original["generated_at"])
     validate_delivery(conn, text, test_mode=cfg.test_mode)
     kwargs = dict(alarm=True, generated_at=digest.window_end, text=render.add_resend_notice(text) if args.resend else text,
                   test=cfg.test_mode, real_now=datetime.now(BJ))
-    if args.first_issue:
+    if sent and not args.resend and anchor is not None:
+        path = anchor
+    elif args.first_issue:
         path = outbox.write_first(cfg.outbox_dir, today, **kwargs)
     elif args.resend:
         path = outbox.write_resend(cfg.outbox_dir, today, **kwargs)
     else:
         path = outbox.write_main(cfg.outbox_dir, today, push=push, **kwargs)
-    scan.upsert_digest(conn, {"date": today, "push": push, "status": "全部失败", "text": kwargs["text"],
-                              "event_ids": listing["event_ids"] if push else [], "generated_at": digest.window_end,
-                              "simulated": clock.simulated})
+    counts = _digest_counts(digest, listing, push=push, failed_days=failed_days, first_issue=args.first_issue)
+    if (sent or args.resend) and existing:
+        counts = json.loads(existing["counts_json"])
+    if not (args.resend and existing):
+        if push:
+            scan.mark_listed(conn, listing["event_ids"], today)
+            mark_supplement(conn, supplement_ids, today)
+        scan.upsert_digest(conn, {"date": today, "push": push, "status": "全部失败", "text": kwargs["text"],
+                                  "event_ids": listing["event_ids"] if push else [], "generated_at": digest.window_end,
+                                  "supplement_event_ids_json": supplement_ids,
+                                  "counts_json": counts,
+                                  "card_sources_json": existing["card_sources_json"] if sent and existing else
+                                  _card_source_snapshot(conn, listing["event_ids"] + supplement_ids) if push else {},
+                                  "window_start": window, "simulated": clock.simulated})
     conn.commit()
+    log.write({"event": "digest_counts", "date": str(today), "counts": counts})
+    from .site import write_status
+    write_status(conn, cfg, clock.now(), runtime={"date": str(today), "status": "全部失败", "push": bool(push),
+        "alarm": True, "outbox": str(path), "simulated": bool(clock.simulated), "fx": fx.status_from_files(cfg)})
     print(path)
+
+
+def _digest_counts(data, listing, *, push, failed_days=0, first_issue=False, incomplete_until=None):
+    if not push:
+        return {}
+    supplement = next((s for s in data.extra_sections if s.key == "backfill" and s.cards), None)
+    return {"admitted": len(data.cards), "ai": sum("AI相关" in c.tag_label for c in data.cards),
+            "social": sum("社交/社群相关" in c.tag_label for c in data.cards),
+            "new_round": sum("新一轮" in c.marks for c in data.cards), "large": sum("大额" in c.marks for c in data.cards),
+            "round_pending": len(data.round_pending), "filtered": listing["filtered_total"],
+            "baseline": data.baseline_count if first_issue else None,
+            "supplement_m": min(10, len(supplement.cards)) if supplement else None,
+            "supplement_k": (supplement.overflow_count or max(0, len(supplement.cards) - 10)) if supplement else None,
+            "new_evidence": data.new_evidence_count, "failed_days": failed_days,
+            "incomplete_until": str(incomplete_until) if first_issue and incomplete_until else None}
+
+
+def _card_source_snapshot(conn, event_ids):
+    from .site import _sources
+    sources = _sources(conn)
+    return {str(eid): [{key: s[key] for key in ("name", "url", "published_at")}
+                      for s in sources.get(eid, [])] for eid in event_ids}
 
 
 def preview_push(cfg: Config, args, clock) -> int:
@@ -1231,7 +1444,11 @@ def preview_push(cfg: Config, args, clock) -> int:
                 latest = conn.execute("SELECT * FROM fetch_run WHERE source_id=? ORDER BY ended_at DESC,id DESC LIMIT 1", (source["id"],)).fetchone()
                 error = ErrorType(latest["error_type"]) if latest and latest["error_type"] else None
                 sources.append(SourceStatusLine(source["name"], bool(latest and latest["result"] == "成功"),
-                    source["crawl_status"] == "已停抓", f"{latest['count']} 条" if latest else "", error))
+                    source["crawl_status"] == "已停抓", f"{latest['count']} 条" if latest else "", error,
+                    _stamp(latest["latest_at"]).date() if latest and latest["latest_at"] else None,
+                    latest["missed_range"] if latest else "",
+                    _stamp(latest["missed_start"]) if latest and latest["missed_start"] else None,
+                    _stamp(latest["missed_end"]) if latest and latest["missed_end"] else None))
             status = existing["status"] if existing else "有新增" if listing["cards"] else "没有新增"
             data = DigestData(today, window, generated, status, cards=listing["cards"],
                 round_pending=listing["round_pending"], filtered=listing["filtered"],
@@ -1239,6 +1456,7 @@ def preview_push(cfg: Config, args, clock) -> int:
                 last_push_summary=_last_summary(conn, today), new_evidence_count=_new_evidence_count(conn, window, generated),
                 base_url=render.link_base_url("" if args.no_links else cfg.base_url, cfg.link_path_template, today),
                 review_site_passed=cfg.review_site_passed and not args.no_links)
+            data.baseline_at = db.first_issue_generated_at(conn)
             failed_days = scan.failed_days_in_window(conn, window, today, outbox_dir=cfg.outbox_dir)
             text = render.render_push(data, early_push=cal.is_early_push(today), failed_days=failed_days,
                 since_last_push=cal.since_last_push(window.date() if window else None, today),

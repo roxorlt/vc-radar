@@ -6,7 +6,7 @@ import subprocess
 import pytest
 
 from test_pipe_pipeline import SOURCES, arguments, offline, rows, run_at, write_fixture
-from vcradar import cli, db, http, outbox, pipeline, render
+from vcradar import cli, db, http, outbox, pipeline, render, wording
 from vcradar.config import BJ, Config
 from vcradar.models import DigestData, ErrorType, SourceStatusLine
 
@@ -68,9 +68,8 @@ def test_e5b_resend_is_ordered_hint_after_early_push_and_before_alarm():
     original = render.render_push(data, early_push=True, incomplete_until=date(2026, 9, 29))
     text = render.add_resend_notice(original)
     assert text.splitlines()[:2] == original.splitlines()[:2]
-    hints = text.splitlines()[2].split(" · ")
-    assert hints[:4] == ["首次运行收录 2 家以前的公司，不算新增", "本周一到 09-29 日的内容没抓全", "提前推送", "重发"]
-    assert hints[4].startswith("TechCrunch 没抓到")
+    assert text.splitlines()[1] == "TechCrunch 没抓到：页面打不开。本周汇总可能不全，不代表没有新公司。"
+    assert all(word not in text for word in ("不算新增", "没抓全", "提前推送", "重发"))
     assert render.add_resend_notice(text) == text
 
 
@@ -82,11 +81,10 @@ def test_e5c_zero_cards_keep_count_alarm_links_sources_and_previous_summary(stat
                       sources=sources, last_push_summary=(date(2026, 10, 23), 2),
                       base_url="https://review.example/weekly", review_site_passed=True)
     lines = render.render_push(data).splitlines()
-    assert lines[1] == "本周没有发现新的天使轮、种子轮、A 轮融资。"
-    assert lines[2] and ("没抓到" in lines[2] or "没抓完" in lines[2])
-    assert lines[3].startswith("已接入 8 个来源网站，其中 1 个出错")
-    assert lines[4] == "上一次有新公司是 10-23 那期，2 家"
-    assert "看本周全部 0 家" in lines[5] and "#week" in lines[5]
+    assert lines[1] == wording.RUN_ERRORS.get(status, "TechCrunch 没抓到：页面打不开。本周汇总可能不全，不代表没有新公司。")
+    assert lines[2] == "本周没有发现新的天使轮、种子轮、A 轮融资。"
+    assert len(lines) == 4 and lines[-1] == "[看本周全部](https://review.example/weekly/#week)"
+    assert "已接入" not in "\n".join(lines)
 
 
 def test_e6_zero_baseline_has_no_hint_and_report_does_not_mistake_card_for_hint(tmp_path, capsys):
@@ -95,7 +93,7 @@ def test_e6_zero_baseline_has_no_hint_and_report_does_not_mistake_card_for_hint(
     enable_only(cfg, "tc_venture")
     payload, _ = run_at(cfg, fixture, "2026-10-26", first_issue=True)
     assert "作为基线" not in payload["text"]
-    assert payload["text"].splitlines()[2].startswith("1. Anchor")
+    assert payload["text"].splitlines()[1].startswith("1. Anchor")
     report = capsys.readouterr().out
     assert "首行文本行 2：\n" in report
 

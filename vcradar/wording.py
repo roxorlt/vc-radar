@@ -11,7 +11,7 @@ PRODUCT_NAME = "早期创投监控"
 PUSH_TITLE = "{day} 周{weekday} · 早期融资 · 本周"
 MARK_ORDER = ("新一轮", "大额", "补抓", "金额待核")
 MARK_LABELS = {"补抓": "补录", "金额待核": "金额说法不一"}
-STATUS_LABELS = {"轮次待核": "轮次待确认", "总部待核": "已纳入"}
+STATUS_LABELS = {"轮次待核": "轮次待确认", "总部待核": "已纳入", "已过滤": "不在收录范围"}
 FETCH_LABELS = {"没轮到": "这次没来得及抓", "已停抓": "已停止抓取"}
 STOP_REASONS = {"封禁": "对方封禁", "异议": "对方提出异议", "人工停抓": "人工停止抓取"}
 NO_NEW = "本周没有发现新的天使轮、种子轮、A 轮融资。"
@@ -24,31 +24,51 @@ STOPPED_HINT = "Term Sheet 已停止抓取：{reason}"
 LAST_NEW = "上一次有新公司是 {day} 那期，{count} 家"
 EVIDENCE_HINT = "{period} {count} 家资料有出入"
 YC_HINT = "YC 新一批 {count} 家"
-OVERFLOW = "另有 {count} 家没有列出"
-OVERFLOW_LINK = "另有 {count} 家没有列出，[在往期页看]({url})"
+OVERFLOW = "还有一些没有列出"
+OVERFLOW_LINK = "还有一些没有列出，[在往期页看]({url})"
 BACKFILL_TITLE = "之前漏掉的公司（一次性补充）"
 BACKFILL_HINT = "另补充此前漏掉的 {count} 家"
-PAGE_LINKS = "[看本周全部 {count} 家]({week})｜[来源网站状态]({sources})"
+PAGE_LINKS = "[看本周全部]({week})"
+FETCH_WARNING_END = "。本周汇总可能不全，不代表没有新公司。"
+PUSH_FAILURE_REASONS = {
+    ErrorType.RATE_LIMITED: "对方限制了访问", ErrorType.UNREACHABLE: "页面打不开",
+    ErrorType.TIMEOUT: "网站没响应", ErrorType.EMPTY: "页面能打开，但一条都读不出来",
+    ErrorType.STALE: "最新一条还是 {date} 的", ErrorType.INTERCEPTED: "被网站拦下来了",
+    ErrorType.YC_UNREADABLE: "读不到公司目录", ErrorType.YC_DROP: "公司数量比上次少了一半以上",
+    ErrorType.NEWSLETTER_NO_DEALS: "页面能打开，但读不到融资清单",
+    ErrorType.NEWSLETTER_STALE: "最新一期还是 {date} 的",
+}
 DIGEST_LABELS = {"基线": "首次运行", "没跑完": "今天没抓完", "全部失败": "今天所有来源都没抓到",
                  "部分失败": "部分来源网站没抓到", "有新增": "发现新公司", "没有新增": "没有发现新公司"}
 RUN_ERRORS = {
-    state: prefix + "：本周汇总按已有的数据发，今天的新公司可能没收进来。已通知维护的人，恢复后补上的放进下一期。"
-    for state, prefix in (("全部失败", "今天所有来源都没抓到"), ("没跑完", "今天没抓完"))
+    "全部失败": "所有来源都没抓到：今天每个网站都出了问题。" + FETCH_WARNING_END.removeprefix("。"),
+    "没跑完": "部分来源没抓到：今天没能按时抓完。" + FETCH_WARNING_END.removeprefix("。"),
 }
-ERROR_TEXT = {
-    ErrorType.RATE_LIMITED: "{X} 没抓到：对方限制了访问。",
-    ErrorType.UNREACHABLE: "{X} 没抓到：页面打不开。",
-    ErrorType.TIMEOUT: "{X} 没抓到：网站没响应。",
-    ErrorType.EMPTY: "{X} 没抓到：页面能打开，但一条都读不出来。",
-    ErrorType.STALE: "{X} 可能没更新：最新一条是 {date} 的。",
-    ErrorType.INTERCEPTED: "{X} 没抓到：被网站拦下来了。",
-    ErrorType.YC_UNREADABLE: "YC 公司目录没抓到：读不到公司目录。",
-    ErrorType.YC_DROP: "YC 公司目录可能出错：公司数量比上次少一半以上。",
-    ErrorType.NEWSLETTER_NO_DEALS: "{X} 没抓到：页面能打开，但读不到融资清单。",
-    ErrorType.NEWSLETTER_STALE: "{X} 可能没更新：最新一期是 {date} 的。",
-}
-ERROR_TEXT = {key: text + "本周汇总可能不全，不代表没有新公司。" for key, text in ERROR_TEXT.items()}
-ERROR_TEXT[ErrorType.TS_STOPPED] = STOPPED_HINT + "。"
+
+
+def warning_subject(name: str) -> str:
+    """为英文或数字结尾的报警来源名补一个空格。"""
+    name = name.rstrip()
+    return name + (" " if re.search(r"[A-Za-z0-9]$", name) else "")
+
+
+def normalize_warning(text: str) -> str:
+    """统一新旧报警行的来源、日期和句间空格。"""
+    text = re.sub(r"([A-Za-z0-9\u4e00-\u9fff])[ \t]*没抓到：",
+                  lambda m: warning_subject(m[1]) + "没抓到：", text)
+    text = re.sub(r"(\d)[ \t]*(的(?:内容没补上|。))", r"\1 \2", text)
+    text = re.sub(r"(之前|之后)[ \t]+的内容没补上", r"\1的内容没补上", text)
+    return re.sub(r"(?<=不代表没有新公司。)[ \t]+", "", text)
+
+
+class _WarningTemplate(str):
+    def format(self, *args, **kwargs):
+        """兼容原模板调用，并按来源名结尾统一报警空格。"""
+        return normalize_warning(super().format(*args, **kwargs))
+
+
+ERROR_TEXT = {key: _WarningTemplate("{X} 没抓到：" + value + FETCH_WARNING_END) for key, value in PUSH_FAILURE_REASONS.items()}
+ERROR_TEXT[ErrorType.TS_STOPPED] = "Term Sheet 没抓到：{reason}" + FETCH_WARNING_END
 SOURCE_ERRORS = {
     "rate_limited": "对方限制了访问", "unreachable": "页面打不开", "timeout": "30 秒没响应",
     "empty": "页面能打开，但一条都读不出来", "stale": "最新一条太久没更新",
@@ -59,11 +79,11 @@ SOURCE_ERRORS = {
 
 # 静态页面和服务端共用，JSON 带此字典供页面和离线渲染使用。
 SITE_TEXT = {
-    "product": PRODUCT_NAME, "week": "本周", "archive": "往期", "sources": "来源网站状态",
-    "subtitle": "每周推送 · 天使轮、种子轮、A 轮", "back": "‹ 返回往期",
-    "no_push": "还没有推送，已收录的公司可在往期中查看", "no_new": NO_NEW,
+    "product": PRODUCT_NAME, "week": "本周", "archive": "往期", "back": "‹ 返回往期",
+    "product_label": "产品", "publication_unknown": "发布时间未知", "excluded": "不在收录范围", "out_of_scope": "不在收录范围",
+    "no_new": NO_NEW,
     "round_pending": "轮次待确认", "tag_pending": "标签待确认", "country_pending": "国家待确认",
-    "city_pending": "城市待确认", "baseline": "首次运行时已有，未推送", "supplement": "此前漏掉",
+    "city_pending": "城市待确认", "supplement": "此前漏掉",
     "round": "轮次", "amount": "金额", "tag": "标签", "status": "状态", "all": "全部",
     "admitted": "已纳入", "angel": "天使轮", "seed": "种子轮", "series_a": "A 轮",
     "ai": "AI相关", "social": "社交/社群相关", "neither": "都不是",
@@ -71,49 +91,30 @@ SITE_TEXT = {
     "missing": "来源里没写", "undisclosed": "未披露", "amount_missing": "金额未披露",
     "lead_missing": "领投未披露", "lead": "领投", "co_lead": "共同领投", "follow": "跟投",
     "unknown": "未知", "detail": "详情", "source_label": "来源：", "filter_period": "推送期",
-    "recent": "近 30 天", "issue": "某一期", "select_date": "选择推送日期", "push": "推送",
-    "count": "共 {count} 条", "filtered": "已过滤 {count} 家", "pending_count": "另有 {count} 家轮次待确认",
-    "counts": "{period}共 {count} 家：AI相关 {ai} · 社交/社群相关 {social} · 新一轮 {new_round} · 大额 {large}",
-    "no_matches": "没有符合条件的公司，换个筛选试试", "beijing": "北京时间",
+    "recent": "近 30 天", "issue": "某一期", "select_date": "指定某一期", "push": "推送",
+    "no_matches": "没有符合条件的公司", "beijing": "北京时间",
+    "page_no_date": "页面没写日期", "read_on": "读取",
     "original_date": "原文日期（美国东部时间）", "original_round": "原文轮次",
     "country_basis": "国家和依据", "date": "日期", "first_seen": "首次发现", "push_date": "推送日期",
-    "key_fields": "关键字段", "description": "简介", "all_sources": "全部来源", "history": "融资历史",
-    "conflicts": "各来源说法不一", "evidence": "资料有出入：", "evidence_companies": "资料有出入的公司",
-    "no_evidence": "暂时没有资料有出入的公司", "quality": "内容待复查",
+    "key_fields": "关键字段", "current_round": "本轮", "description": "简介", "all_sources": "全部来源", "history": "融资历史",
+    "conflicts": "各来源说法不一", "evidence": "资料有出入：",
+    "pushed_value": "推送时写的：", "found_value": "新来源写的：",
     "deep": "深度解读", "deep_pending": "解读生成中", "deep_absent": "暂时没有深度解读",
     "deep_failed": "深度解读生成失败", "point": "要点", "quote": "原句",
-    "no_company": "没有找到这家公司", "fetch_time": "最近抓取", "not_fetched": "还没抓取",
-    "latest": "最新一条", "result": "结果：", "technical": "技术：", "address": "地址", "normal": "正常",
-    "success": "成功", "stopped": "已停止抓取", "connected": "已接入 {count} 个来源网站",
-    "fx": "汇率", "fx_date": "汇率日期：{day}", "ecb": "欧洲央行",
-    "missed": MISSED_HINT, "ratios": "待确认占比 · {date} 推送",
-    "ratio": "{percent}% · {total} 家中 {count} 家", "due": "今天要做", "done": "已完成",
-    "running": "生成中", "failed": "失败", "absent": "暂时没有", "skipped": "不做",
-    "companies_count": "{count} 家", "month_cost": "本月已花费", "extraction": "文本抽取",
-    "no_record": "暂无记录", "not_connected": "没接入", "loading_detail": "正在读取公司详情…",
+    "no_company": "没有找到这家公司", "failed": "失败", "absent": "暂时没有", "skipped": "不做",
+    "loading_detail": "正在读取公司详情…",
     "detail_failed": "暂时无法读取公司详情，请稍后重试", "retry": "重试",
     "load_failed": "暂时无法读取，请稍后刷新", "company_detail": "公司详情", "yc": "YC 新一批名单",
-    "week_failed": {"incomplete": "今天没抓完，本周汇总按已有的数据展示。",
-                    "failed": "今天所有来源都没抓到，本周汇总按已有的数据展示。",
-                    "partial": "部分来源网站没抓到，本周汇总可能不全。"},
-    "no_available": "暂时没有可展示的新增公司",
     "loading": "正在读取…", "no_script": "请开启浏览器的 JavaScript 功能查看页面。",
-    "nav": "页面", "round_missing": "轮次未披露", "not_caught": "未抓到",
-    "all_normal": "全部正常", "some": "其中 ", "stopped_count": "{count} 个已停止抓取",
-    "error_count": "{count} 个出错", "see_yc": "名单见网页",
-    "counts_suffix": "条", "writes": "写", "complete": "完成",
-    "supplement_unsent": "补充未推送", "unsent_count": "补充未推送 {count} 家", "view_all": "查看全部",
+    "nav": "页面", "round_missing": "轮次未披露",
+    "supplement_unsent": "补充未推送", "view_all": "查看全部",
     "verification": "入库查证", "verified": "入库时已查证",
     "not_verified": "尚未查，下次运行再查", "verification_omitted": "没有做入库查证",
     "verify_count": "已查过 {count} 次，仍无法确认", "verify_unconfirmed": "仍无法确认",
-    "verify_stats": "今天查证 {companies} 家 · 确认 {fields} 项 · 本次未查 {unsearched} 家 · 搜索 {searches} 次",
-    "verify_cost": "其中首期 {first} 元 · 补充命令 {backfill} 元",
     "verify_sources": "入库查证用到的来源",
     "verify_identity_missing": "仍无法确认：来源里没有能区分同名公司的信息",
     "amount_corrected": "金额已按来源原文更正", "amount_not_written": "来源里没有写明金额",
-    "homepage": "官网", "homepage_coverage": "本期核到 {found} / {total} 家",
-    "homepage_missing": "官网未核到 {count} 家：{names}",
-    "homepage_usage": "今天 {searches} 次 · 本月 ¥{cost}",
+    "homepage": "官网",
 }
 
 BANNED_OLD_WORDS = frozenset((

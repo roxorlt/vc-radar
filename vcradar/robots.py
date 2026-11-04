@@ -74,16 +74,27 @@ class RobotsChecker:
                 return self._policies[host]
             path = self.directory / (re.sub(r"[^\w.-]", "_", host) + ".txt")
             meta_path = path.with_suffix(".json")
+            loaded = False
+            status = None
+            body = ""
             try:
-                metadata = json.loads(meta_path.read_text())
-                body = path.read_text()
-                status = metadata["status"]
-            except (OSError, ValueError, KeyError):
+                metadata = json.loads(meta_path.read_text(encoding="utf-8"))
+                cached_status = metadata["status"]
+                cached_error = metadata.get("error")
+                if isinstance(cached_status, int) or (cached_status is None and cached_error == "timeout"):
+                    body = path.read_text(encoding="utf-8")
+                    status = cached_status
+                    loaded = True
+            except (OSError, ValueError, KeyError, TypeError):
+                loaded = False
+            if not loaded:
                 response = self.transport.get(f"{parsed.scheme}://{parsed.netloc}/robots.txt", timeout=30.0)
                 status, body = response.status, response.body
-                self.directory.mkdir(parents=True, exist_ok=True)
-                path.write_text(body, encoding="utf-8")
-                meta_path.write_text(json.dumps({"status": status, "error": response.error}), encoding="utf-8")
+                # PRD：5xx/超时按当天禁止缓存；仅本机临时断连（conn:*）不落盘，避免一次瞬断锁死全天。
+                if isinstance(status, int) or (status is None and response.error == "timeout"):
+                    self.directory.mkdir(parents=True, exist_ok=True)
+                    path.write_text(body, encoding="utf-8")
+                    meta_path.write_text(json.dumps({"status": status, "error": response.error}), encoding="utf-8")
             policy = RobotFileParser()
             if status is not None and 400 <= status < 500:
                 policy.allow_all = True

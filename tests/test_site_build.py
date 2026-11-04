@@ -1,7 +1,9 @@
 """合成库验证站点快照、SQL 口径和失败回滚；不读取真实业务数据。"""
 from datetime import datetime, timedelta
 from itertools import product
+from html.parser import HTMLParser
 import json
+import re
 from pathlib import Path
 import shutil
 import sqlite3
@@ -156,6 +158,24 @@ def render_page(path, route, cid=None):
                 path / "data.json", route, cid or "")
 
 
+def html_text(html):
+    class Text(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.parts = []
+
+        def handle_data(self, value):
+            self.parts.append(value)
+
+    parser = Text()
+    parser.feed(html)
+    return "".join(parser.parts)
+
+
+def summary_titles(html):
+    return [html_text(value) for value in re.findall(r"<summary\b[^>]*>(.*?)</summary>", html, re.S)]
+
+
 def company_detail(path, cid):
     """读取快照中自足的公司详情，供离线断言使用。"""
     return json.loads((path / "c" / f"{cid}.json").read_bytes())["companies"][0]
@@ -177,16 +197,16 @@ def test_snapshot_week_and_ratio_match_independent_sql(seeded):
     rows = conn.execute("SELECT DISTINCT c.id,c.status,c.country,c.ai_label,c.social_label,c.manual_label "
                         "FROM funding_event e JOIN company c ON c.id=e.company_id "
                         "WHERE e.id IN (SELECT value FROM json_each(?)) AND json_array_length(e.filter_reasons_json)=0", (dump(ids),)).fetchall()
-    ratio = data["status"]["pending_ratios"]
+    ratio = site._snapshot(seeded[0], seeded[1], NOW)["status"]["pending_ratios"]
     assert ratio["denominator"] == len(rows)
     assert ratio["country"]["count"] == sum(r["country"] == "国家待确认" for r in rows)
     assert ratio["round"]["count"] == sum(r["status"] == "轮次待核" for r in rows)
     assert ratio["tag"]["count"] == sum(not r["manual_label"] and "待核" in (r["ai_label"], r["social_label"]) for r in rows)
-    assert {p.name for p in path.iterdir()} == {"index.html", "style.css", "app.js", "data.json", "c"}
+    assert {p.name for p in path.iterdir()} == {"index.html", "style.css", "app.js", "data.json", "c", "tokens.css", "components.css", "icons.svg", "fonts"}
     assert '<meta name="robots" content="noindex, nofollow">' in (path / "index.html").read_text()
     assert '<meta name="referrer" content="no-referrer">' in (path / "index.html").read_text()
     html = render_page(path, "weekHtml")
-    assert html.index("Flapping Airplanes") < html.index("Dream") < html.index("轮次待确认</h2>") < html.index("<summary>已过滤")
+    assert html.index("Flapping Airplanes") < html.index("Dream") < html.index("<summary><span>轮次待确认") < html.index("<summary><span>不在收录范围")
 
 
 @pytest.mark.parametrize("period", ["all", "week", "30", "date:2026-10-16", "date:2026-10-23", "date:2026-10-30"])
@@ -268,9 +288,10 @@ def test_eight_items_frozen_header_sources_and_entity_links(seeded):
     assert not entities[2]["url"] and not entities[3]["url"]
     html = render_page(path, "detailHtml", "mach9")
     assert 'target="_blank" rel="noopener nofollow"' in html
-    assert html.index("资料有出入：国家") < html.index("简介") < html.index("关键字段") < html.index("产品是什么") < html.index("融资历史") < html.index("全部来源")
-    assert "来源里没写" in html and "原文日期（美国东部时间）2026-10-29" in html
-    assert "北京时间 2026-10-30 07:15:00" in html
+    assert html.index("资料有出入：国家") < html.index("简介") < html.index("关键字段") < html.index("产品是什么") < html.index("融资历史") < html.index('<h2 class="sec-t">全部来源')
+    assert "来源里没写" in html and "原文日期（美国东部时间）10-29" in html
+    assert "北京时间 10-30 07:15" in html and "07:15:00" not in html and "2026-10-30" not in html
+    assert "TechCrunch · 手写融资信息" in html and "页面没写日期 · 10-31 读取" in html
     assert "官网未知" not in html and "utm_" not in html
     terse = next(e for e in data["events"] if e["id"] == 1)
     assert terse["sources"][0]["beijing_at"] == "2026-10-19 07:42:00"
@@ -287,7 +308,7 @@ def test_yc_skipped_only_summary_and_sources(seeded):
 
 def test_source_status_progress_usage_and_long_evidence_window(seeded):
     path, data = snapshot(seeded)
-    status = data["status"]
+    status = site._snapshot(seeded[0], seeded[1], NOW)["status"]
     assert len(status["sources"]) == 8
     tc = next(s for s in status["sources"] if s["name"] == "TechCrunch")
     assert len(tc["addresses"]) == 2 and tc["count"] == 20
@@ -300,21 +321,22 @@ def test_source_status_progress_usage_and_long_evidence_window(seeded):
     assert status["deepdive_budget"]["month_used"] == 2.75
     assert status["extract_budget"]["month_used"] == 1.25
     assert [e["company_id"] for e in status["new_evidence"]] == ["mach9", "terse"]
-    html = render_page(path, "sourcesHtml")
-    assert "可能有遗漏" in html and "本月已花费" in html
-    assert "内容待复查" in html  # 内容待复查只在来源网站状态页显示。
+    html = render_page(path, "weekHtml")
+    assert "没抓到：" not in html and 'class="alert"' not in html
+    assert "本月已花费" not in html and "内容待复查" not in html
+    assert "status" not in data
 
 
 def test_no_push_no_ratio_and_first_issue_is_latest(seeded):
     conn, _ = seeded
     conn.execute("DELETE FROM digest")
     path, data = snapshot(seeded)
-    assert data["status"]["pending_ratios"] is None and data["week"]["date"] is None
-    assert "还没有推送" in render_page(path, "weekHtml")
+    assert site._snapshot(seeded[0], seeded[1], NOW)["status"]["pending_ratios"] is None and data["week"]["date"] is None
+    assert render_page(path, "weekHtml") == '<p class="empty-line">本周没有发现新的天使轮、种子轮、A 轮融资。</p>'
     conn.execute("INSERT INTO digest(date,push,event_ids_json,note) VALUES ('2026-10-31',1,'[16]','首期')")
     conn.execute("UPDATE funding_event SET push_date='2026-10-31' WHERE id=16")
     _, data = snapshot(seeded)
-    assert data["week"]["cards"] == [16] and data["status"]["pending_ratios"]["denominator"] == 1
+    assert data["week"]["cards"] == [16] and site._snapshot(seeded[0], seeded[1], NOW)["status"]["pending_ratios"]["denominator"] == 1
 
 
 def test_atomic_replace_keeps_exactly_one_previous_version(seeded):
@@ -379,8 +401,8 @@ def test_test_mode_isolated_and_explicit_snapshot_dir(seeded):
     path, data = snapshot(seeded)
     assert path == cfg.state_dir / "test/site"
     assert data["meta"]["simulated"] is True
-    assert data["status"]["deepdive_budget"]["month_used"] == .12
-    assert data["status"]["extract_budget"]["month_used"] is None
+    assert site._snapshot(seeded[0], seeded[1], NOW)["status"]["deepdive_budget"]["month_used"] == .12
+    assert site._snapshot(seeded[0], seeded[1], NOW)["status"]["extract_budget"]["month_used"] is None
     assert not prod.with_name("site.prev").exists()
     out = cfg.state_dir / "test-site/2026-10-31/0930"
     assert site.build_site(conn, cfg, out_dir=out, now=NOW) == out
@@ -395,7 +417,8 @@ def test_next_push_respects_holidays_and_time(tmp_path, monkeypatch, now, expect
     monkeypatch.setattr(site, "LINK_RECORDS", tmp_path / "missing.json")
     try:
         path = site.build_site(conn, cfg, now=datetime.fromisoformat(now).replace(tzinfo=BJ))
-        assert json.loads((path / "data.json").read_text())["meta"]["next_push_date"] == expected
+        assert site._snapshot(conn, cfg, datetime.fromisoformat(now).replace(tzinfo=BJ))["meta"]["next_push_date"] == expected
+        assert "next_push_date" not in json.loads((path / "data.json").read_text())["meta"]
     finally:
         conn.close()
 
@@ -496,7 +519,7 @@ def test_source_error_copy_and_latest_address_result(seeded, error, message):
     conn.execute("INSERT INTO fetch_run(run_id,source_id,started_at,ended_at,http_code,result,error_type) "
                  "VALUES ('later','tc_venture','2026-10-31T00:40:00Z','2026-10-31T00:41:00Z',403,'失败',?)", (error,))
     _, data = snapshot(seeded)
-    source = next(s for s in data["status"]["sources"] if s["name"] == "TechCrunch")
+    source = next(s for s in site._snapshot(seeded[0], seeded[1], NOW)["status"]["sources"] if s["name"] == "TechCrunch")
     assert source["result"] == message and "HTTP" not in source["result"]
     assert source["last_at"] == "2026-10-31 08:41:00"
     assert "HTTP 403" in source["technical"]
@@ -522,16 +545,14 @@ def test_guard_checks_deep_quotes_and_static_assets(seeded, monkeypatch, tmp_pat
 
 
 @pytest.mark.parametrize("state", ["没跑完", "全部失败", "部分失败"])
-def test_failed_week_does_not_claim_no_new_companies(seeded, state):
+def test_failed_empty_week_shows_no_new_without_page_alarm(seeded, state):
     conn, _ = seeded
     conn.execute("UPDATE digest SET status=?,event_ids_json='[]' WHERE date='2026-10-30'", (state,))
     path, _ = snapshot(seeded)
     html = render_page(path, "weekHtml")
-    assert "本周没有发现新的天使轮、种子轮、A 轮融资。" not in html and "来源网站状态" in html
-    expected = {"没跑完": "今天没抓完，本周汇总按已有的数据展示。",
-                "全部失败": "今天所有来源都没抓到，本周汇总按已有的数据展示。",
-                "部分失败": "部分来源网站没抓到，本周汇总可能不全。"}[state]
-    assert expected in html and "金额未披露" not in html
+    assert "本周没有发现新的天使轮、种子轮、A 轮融资。" in html and "来源网站状态" not in html
+    expected = "YC Launches没抓到：对方限制了访问。本周汇总可能不全，不代表没有新公司。"
+    assert expected not in html and "没抓到：" not in html and "金额未披露" not in html
 
 
 def test_stored_week_hints_are_plain_copy_with_relative_source_link(seeded):
@@ -540,8 +561,9 @@ def test_stored_week_hints_are_plain_copy_with_relative_source_link(seeded):
     conn.execute("UPDATE digest SET text=? WHERE date='2026-10-30'", (text,))
     path, _ = snapshot(seeded)
     html = render_page(path, "weekHtml")
-    assert "上次推送后共 9 家" in html and "提前推送" in html
-    assert 'href="#sources"' in html and "private" not in html
+    assert "上次推送后共 9 家" not in html and "提前推送" not in html
+    assert 'href="#sources"' not in html and "private" not in html
+    assert 'class="dgroup-h"' in html
 
 
 def test_build_accepts_default_sqlite_connection_without_mutating_it(seeded):

@@ -7,10 +7,12 @@ import json
 from pathlib import Path
 from dataclasses import replace
 
-from .config import Config, validate_link_path_template
+from .config import BJ, Config, validate_link_path_template
+from .fetcher import has_missed, missed_interval
 from . import wording
 from .fx import format_amount_text
 from .models import Card, DigestData, ErrorType
+from .sources.registry import DISPLAY_ORDER, display_rank
 
 
 ERROR_TEXT = wording.ERROR_TEXT
@@ -34,51 +36,22 @@ def render_push(
     filtered_count: int | None = None, first_seen: dict[str, datetime] | None = None,
     links_file: Path | None = None,
 ) -> str:
-    """生成周报；发布验收开关关闭时省略站内链接和网页提示。
-
-    d.cards 提供全部已纳入公司，amount_usd 按显示金额；仅金额待核取第一来源的主金额。
-    early_push 由日历侧判定周五放假后的提前推送；failed_days 由调用方统计窗口内
-    非推送工作日整天失败、缺记录/文件或漏抓的去重天数，单源失败后恢复不计。
-    incomplete_until 是首期未补全的最后一个北京日期；仅 baseline_count > 0 时写基线提示。
-    since_last_push 由调用方按本次推送日与上个 push=true 主文件的北京日期差 > 7 天判定；
-    只有显式传 True 才写「上次推送后」，不根据窗口时长、运行状态或旧证据提示推断。
-    filtered_count 可传去重后的已过滤总数，省略时取 d.filtered 的正计数之和。
-    first_seen 按 company_id 提供带时区的首次入库时间；缺失者在同金额、同标记时排后，
-    再按公司名和 id 稳定排序。所有参数均不改变 d；旧 weekly 开关不改变 V15e 周报结构。
-    没有已纳入公司时写无新增文案，再加来源状态及可用的上次有新公司记录。
-    """
+    """生成 V17 推送，只展示公司内容和一行抓取报警；统计输入保持原样。"""
     if not d.review_site_passed:
         d = replace(d, base_url="")
-    hints = first_lines(d, early_push=early_push, failed_days=failed_days,
-                        since_last_push=since_last_push, incomplete_until=incomplete_until)
-    if d.cards:
-        period = "上次推送后" if since_last_push else "本周"
-        ai = sum("AI相关" in card.tag_label for card in d.cards)
-        social = sum("社交/社群相关" in card.tag_label for card in d.cards)
-        new_round = sum("新一轮" in card.marks for card in d.cards)
-        large = sum("大额" in card.marks for card in d.cards)
-        counts = wording.SITE_TEXT["counts"].format(period=period, count=len(d.cards), ai=ai, social=social,
-                                                  new_round=new_round, large=large)
-    else:
-        counts = wording.NO_NEW
-    counts += _pending_counts(d, filtered_count)
-
     title = wording.PUSH_TITLE.format(day=f"{d.push_date:%m-%d}", weekday=_WEEKDAYS[d.push_date.weekday()])
-    lines = [title, counts]
-    if hints:
-        lines.append(" · ".join(hints))
+    lines = [title]
+    warning = fetch_warning(d)
+    if warning:
+        lines.append(warning)
+    if not d.cards:
+        lines.append(wording.NO_NEW)
     official = official_links(links_file)
     for number, card in enumerate(sort_cards(d.cards, first_seen=first_seen)[:10], start=1):
         lines.append(f"{number}. {_highlight(card, official)}")
     if d.yc_new_batch is not None:
-        _, count = d.yc_new_batch
-        yc = wording.YC_HINT.format(count=count)
-        lines.append(yc + (f"，[{wording.SITE_TEXT['see_yc']}]({_url(d.base_url, 'yc')})" if d.base_url else ""))
-    if not d.cards:
-        lines.append(_source_line(d))
-        if d.last_push_summary is not None:
-            last_date, count = d.last_push_summary
-            lines.append(wording.LAST_NEW.format(day=f"{last_date:%m-%d}", count=count))
+        yc = wording.YC_HINT.format(count=d.yc_new_batch[1])
+        lines.append(yc + (f"，[名单见网页]({_url(d.base_url, 'yc')})" if d.base_url else ""))
     for section in d.extra_sections:
         if not section.cards:
             continue
@@ -87,70 +60,86 @@ def render_push(
         lines.extend(f"{i}. {_highlight(card, official)}" for i, card in enumerate(cards[:10], 1))
         overflow = section.overflow_count or max(0, len(section.cards) - 10)
         if overflow > 0:
-            overflow_text = section.overflow_text or (wording.OVERFLOW_LINK.format(
-                count=overflow, url=_url(d.base_url, 'backfill')) if d.base_url else
-                wording.OVERFLOW.format(count=overflow))
-            lines.append(overflow_text if d.base_url else remove_page_links(overflow_text))
+            lines.append(wording.OVERFLOW_LINK.format(url=_url(d.base_url, 'backfill'))
+                         if d.base_url else wording.OVERFLOW)
     if d.base_url:
-        lines.append(wording.PAGE_LINKS.format(count=len(d.cards), week=_url(d.base_url, 'week'),
-                                              sources=_url(d.base_url, 'sources')))
+        lines.append(wording.PAGE_LINKS.format(week=_url(d.base_url, 'week')))
     return "\n".join(lines)
+
+
+def _missed_reason(source, reference, baseline_at=None):
+    start, end = missed_interval(source.missed_range, source.missed_start, source.missed_end, reference=reference)
+    label = lambda value: value.astimezone(BJ).strftime("%m-%d %H:%M")
+    if start and baseline_at and start < baseline_at:
+        start = baseline_at
+    if start and end:
+        span = label(end) if label(start) == label(end) else f"{label(start)} 到 {label(end)}"
+        reason = span + " 的内容没补上"
+    elif end:
+        span = f"{label(end)} 之前"
+        reason = span + "的内容没补上"
+    elif start:
+        span = f"{label(start)} 之后"
+        reason = span + "的内容没补上"
+    else:
+        return "有一段时间的内容没补上", ("missed", None, None)
+    return reason, ("missed", span)
+
+
+def fetch_warning(d: DigestData) -> str:
+    """按类型及全部参数合并报警；停抓句始终单独接在同一行。"""
+    messages = []
+    if d.status in _RUN_ERROR_TEXT:
+        messages.append(_RUN_ERROR_TEXT[d.status])
+    else:
+        failures = []
+        for source in d.sources:
+            if source.stopped:
+                continue
+            if not source.ok:
+                error = source.error_type or ErrorType.UNREACHABLE
+                if error == ErrorType.TS_STOPPED:
+                    continue
+                day = source.latest_beijing_date.strftime("%m-%d") if source.latest_beijing_date else "日期不明"
+                reason = wording.PUSH_FAILURE_REASONS.get(error, "页面打不开").format(date=day)
+                signature = (error, day if error in {ErrorType.STALE, ErrorType.NEWSLETTER_STALE} else None)
+            elif has_missed(source.missed_range, d.baseline_at, source.missed_start, source.missed_end, reference=d.window_end):
+                reason, signature = _missed_reason(source, d.window_end, d.baseline_at)
+            else:
+                continue
+            rank = (display_rank(source.source_id) if source.source_id is not None else
+                    DISPLAY_ORDER.index(source.name) if source.name in DISPLAY_ORDER else len(DISPLAY_ORDER))
+            failures.append((source.name, reason, signature, rank))
+        if failures:
+            failures.sort(key=lambda item: (item[3], item[0]))
+            names = "、".join(dict.fromkeys(item[0] for item in failures))
+            reason = failures[0][1] if all(item[2] == failures[0][2] for item in failures) else "网站出了问题"
+            messages.append(f"{wording.warning_subject(names)}没抓到：{reason}" + wording.FETCH_WARNING_END)
+    if d.ts_stopped_notice:
+        reason = "对方要求停止抓取" if d.ts_stopped_notice == "异议" else "对方不再允许抓取"
+        messages.append("Term Sheet 没抓到：" + reason + wording.FETCH_WARNING_END)
+    return "".join(messages)
 
 
 def first_lines(
     d: DigestData, *, early_push: bool = False, failed_days: int = 0,
     since_last_push: bool = False, incomplete_until: date | None = None,
 ) -> list[str]:
-    """返回提示项：基线、首期补全、提前推送、重发、报警类、新证据。
-
-    参数含义同 render_push；提示以「 · 」连接为单独一行，不添加句末句号，9.1 长文案保留原句号。
-    当天整体失败时用总提示替代逐信源报错，仍保留其他提示。
-    """
-    lines = []
-    if d.baseline_count > 0:
-        lines.append(wording.BASELINE_HINT.format(count=d.baseline_count))
-    lines.extend(section.hint for section in d.extra_sections if section.cards and section.hint)
-    if incomplete_until is not None:
-        lines.append(wording.INCOMPLETE_HINT.format(day=f"{incomplete_until:%m-%d}"))
-    if early_push:
-        lines.append("提前推送")
-    if d.resend:
-        lines.append("重发")
-    if d.status in _RUN_ERROR_TEXT:
-        lines.append(_RUN_ERROR_TEXT[d.status])
-    if failed_days > 0:
-        lines.append(wording.FAILED_DAYS.format(count=failed_days))
-    if d.status not in _RUN_ERROR_TEXT:
-        for source in d.sources:
-            if source.stopped or source.ok:
-                continue
-            error = source.error_type or ErrorType.UNREACHABLE
-            if error == ErrorType.TS_STOPPED:
-                continue
-            template = ERROR_TEXT.get(error, ERROR_TEXT[ErrorType.UNREACHABLE])
-            latest = source.latest_beijing_date.isoformat() if source.latest_beijing_date else "日期不明"
-            lines.append(template.format(X=source.name, date=latest))
-    for source in d.sources:
-        if source.missed_range:
-            lines.append(wording.MISSED_HINT.format(name=source.name, span=source.missed_range))
-    if d.ts_stopped_notice:
-        lines.append(ERROR_TEXT[ErrorType.TS_STOPPED].format(reason=wording.STOP_REASONS.get(d.ts_stopped_notice, wording.display_text(d.ts_stopped_notice))).removesuffix("。"))
-    if d.new_evidence_count > 0:
-        since = "上次推送后" if since_last_push else "本周"
-        evidence = wording.EVIDENCE_HINT.format(period=since, count=d.new_evidence_count)
-        lines.append(f"[{evidence}]({_url(d.base_url, 'sources')})" if d.review_site_passed and d.base_url else evidence)
-    return list(dict.fromkeys(lines))
+    """返回唯一报警行；旧计数和提示参数只保留接口兼容。"""
+    warning = fetch_warning(d)
+    return [warning] if warning else []
 
 
 def remove_page_links(text: str) -> str:
     """去掉新旧推送中的站内链接和网页提示，保留官网及来源链接。"""
     lines = []
     for line in text.splitlines():
-        if re.match(r"\[看本周全部 \d+ 家\]", line):
+        if re.match(r"\[看本周全部(?: \d+ 家)?\]", line):
             continue
         line = re.sub(r"\[((?:本周|上次推送后) \d+ 家(?:有新证据|资料有出入))\]\([^\n]*?\)", r"\1", line)
         line = re.sub(r"(YC 新(?:批次|一批) \d+ 家)[，,].*", r"\1", line)
         line = re.sub(r"另有 (\d+) 家(?:没有列出)?，\[在往期页看\]\([^\n]*\)", r"另有 \1 家没有列出", line)
+        line = re.sub(r"还有一些没有列出，\[在往期页看\]\([^\n]*\)", wording.OVERFLOW, line)
         lines.append(line)
     return "\n".join(lines)
 
@@ -160,6 +149,10 @@ def push_first_lines(text: str) -> tuple[str, str]:
     lines = text.removeprefix("重发\n").splitlines()
     counts = lines[1] if len(lines) > 1 else ""
     hints = lines[2] if len(lines) > 2 else ""
+    if re.search(r"(?:没抓到|可能没更新|可能出错)：", counts):
+        return "", counts
+    if not counts.startswith(("本周共", "上次推送后共", "本周没有", "没有新增")):
+        counts = ""
     prefixes = ("已收录 ", "首次运行收录 ", "另补充此前漏掉的 ", "本周一至 ", "本周一到 ",
                 "提前推送", "重发", "今天", "本周有 ", "可能有遗漏：", "有漏抓：", "Term Sheet 已", "[本周 ",
                 "[上次推送后 ", "本周 ", "上次推送后 ")
@@ -169,32 +162,60 @@ def push_first_lines(text: str) -> tuple[str, str]:
 
 
 def add_resend_notice(text: str) -> str:
-    """把重发放在提前推送之后、报警之前，兼容历史推送。"""
-    text = text.removeprefix("重发\n")
-    _, hints = push_first_lines(text)
-    parts = [part for part in hints.split(" · ") if part and part != "重发"]
-    position = 0
-    while position < len(parts) and (parts[position].startswith(("已收录 ", "首次运行收录 ",
-            "另补充此前漏掉的 ", "本周一至 ", "本周一到 ")) or parts[position] == "提前推送"):
-        position += 1
-    parts.insert(position, "重发")
-    lines = text.splitlines()
-    if hints:
-        lines[2] = " · ".join(parts)
-    else:
-        lines.insert(2, " · ".join(parts))
-    return "\n".join(lines)
+    """重发沿用公司内容，显示时去掉新旧统计提示，不回写原主文件。"""
+    lines = text.removeprefix("重发\n").splitlines()
+    if not lines:
+        return ""
+    warning = warning_from_text(text)
+    content, footer = [], ""
+    for line in lines[1:]:
+        if match := re.search(r"\[看本周全部(?: \d+ 家)?\]\(([^)]+)\)", line):
+            footer = wording.PAGE_LINKS.format(week=match[1])
+        elif line.startswith("另有 ") and "没有列出" in line:
+            link = re.search(r"\[在往期页看\]\(([^)]+)\)", line)
+            content.append(wording.OVERFLOW_LINK.format(url=link[1]) if link else wording.OVERFLOW)
+        elif line.startswith(("还有一些没有列出", "YC 新一批")) or re.match(r"\d+\. ", line) or line == wording.NO_NEW:
+            content.append(line)
+        elif line and not re.search(
+            r"本周共|上次推送后|已过滤|不算新增|没抓全|来源网站|已接入|上一次有新公司|"
+            r"首次运行|已收录|另补充|另有 \d+ 家轮次|提前推送|重发|本周有 \d+ 天|"
+            r"YC 新(?:批次|一批)|资料有出入|有新证据|没抓到：|可能没更新：|可能出错：|"
+            r"今天没抓完|今天所有来源|Term Sheet 已|可能有遗漏", line
+        ):
+            content.append(line)
+    return "\n".join([lines[0], *([warning] if warning else []), *content,
+                       *([footer] if footer else [])])
+
+
+def warning_from_text(text: str) -> str:
+    """从新旧推送中只取抓取报警，供本周页与历史重发共用。"""
+    failures = []
+    for line in text.splitlines():
+        if re.match(r"\d+\. ", line):
+            continue
+        if wording.FETCH_WARNING_END in line and " · " not in line and "；" not in line and not any(
+            old in line for old in ("提前推送", "今天没抓完", "今天所有来源都没抓到", "可能没更新", "可能出错")):
+            return wording.normalize_warning(line.strip())
+        for part in re.split(r" · |；", line):
+            if "今天所有来源都没抓到" in part:
+                failures.append(wording.RUN_ERRORS["全部失败"].removesuffix(wording.FETCH_WARNING_END))
+            elif "今天没抓完" in part:
+                failures.append(wording.RUN_ERRORS["没跑完"].removesuffix(wording.FETCH_WARNING_END))
+            else:
+                match = re.match(r"(.+?)(?:没抓到|可能没更新|可能出错)：([^。]+)", part)
+                if match:
+                    failures.append(f"{wording.warning_subject(match[1].strip())}没抓到：{match[2]}")
+        for match in re.finditer(r"可能有遗漏：([^，]+)，[^·\n]+", line):
+            failures.append(f"{wording.warning_subject(match[1].strip())}没抓到：此前遗漏的内容还没有补齐")
+    return wording.normalize_warning("；".join(dict.fromkeys(failures)) + wording.FETCH_WARNING_END) if failures else ""
 
 
 def is_alarm(d: DigestData, *, failed_days: int = 0, push: bool = True) -> bool:
-    """判断报警；failed_days 同 render_push，push=False 时只看当天的前四种错误。
-
-    当天信源出错、没跑完、全部失败、漏抓始终报警；本期失败天数和停抓首次提示只在推送日报警。
-    """
+    """当天抓取错误与基线后漏抓报警；停抓提示只在实际推送日报警。"""
     today_failed = (d.status in _RUN_ERROR_TEXT
-                    or any(not source.ok and not source.stopped for source in d.sources)
-                    or any(bool(source.missed_range) for source in d.sources))
-    return today_failed or (push and (failed_days > 0 or bool(d.ts_stopped_notice)))
+                    or any(not source.ok and not source.stopped and source.error_type != ErrorType.TS_STOPPED for source in d.sources)
+                    or any(not source.stopped and has_missed(source.missed_range, d.baseline_at, source.missed_start, source.missed_end, reference=d.window_end) for source in d.sources))
+    return today_failed or (push and bool(d.ts_stopped_notice))
 
 
 def sort_cards(cards: list[Card], *, first_seen: dict[str, datetime] | None = None) -> list[Card]:
@@ -261,39 +282,6 @@ def _one_line(text: str) -> str:
 
 def _url(base_url: str, route: str) -> str:
     return f"{base_url.rstrip('/')}/#{route}"
-
-
-def _pending_counts(d: DigestData, filtered_count: int | None) -> str:
-    pending = []
-    if d.round_pending:
-        pending.append(wording.SITE_TEXT["pending_count"].format(count=len(d.round_pending)))
-    text = " · ".join(pending)
-    filtered = (sum(count for reason, count in d.filtered.items() if count > 0 and reason != "总部非美国")
-                if filtered_count is None else filtered_count)
-    if filtered > 0:
-        text += (" · " if text else "") + wording.SITE_TEXT["filtered"].format(count=filtered)
-    return " · " + text if text else ""
-
-
-def _source_line(d: DigestData) -> str:
-    # 一个信源可能有多个抓取地址，接入数按信源名数。
-    names = dict.fromkeys(source.name for source in d.sources)
-    stopped = {name for name in names if all(source.stopped for source in d.sources if source.name == name)}
-    failed = {source.name for source in d.sources if not source.ok and not source.stopped}
-    line = wording.SITE_TEXT["connected"].format(count=len(names)) + "，"
-    states = []
-    if stopped:
-        states.append(wording.SITE_TEXT["stopped_count"].format(count=len(stopped)))
-    if failed:
-        states.append(wording.SITE_TEXT["error_count"].format(count=len(failed)))
-    line += wording.SITE_TEXT["some"] + " · ".join(states) if states else wording.SITE_TEXT["all_normal"]
-    counts = []
-    for source in d.sources:
-        if source.stopped:
-            continue
-        label = source.count_label if source.ok else wording.SITE_TEXT["not_caught"]
-        counts.append(f"{source.name} {label}".rstrip())
-    return line + ("：" + " · ".join(counts) if counts else "")
 
 
 def read_link_records(path: Path | None = None) -> list[dict]:
