@@ -43,29 +43,38 @@ class UrllibTransport:
             self.request_log.append(_log_entry(url, request_headers, data))
         started = time.monotonic()
         response = HttpResponse(url, None)
-        request = urllib.request.Request(url, headers=request_headers, data=data)
-        try:
+        for attempt in range(3):
+            response = HttpResponse(url, None)
+            request = urllib.request.Request(url, headers=request_headers, data=data)
             try:
-                handle = urllib.request.urlopen(request, timeout=timeout)
-            except urllib.error.HTTPError as exc:
-                handle = exc
-            with handle:
-                payload = handle.read()
-                if "gzip" in handle.headers.get("Content-Encoding", "").lower():
-                    payload = gzip.decompress(payload)
-                charset = handle.headers.get_content_charset() or "utf-8"
                 try:
-                    body = payload.decode(charset, errors="replace")
-                except LookupError:
-                    body = payload.decode("utf-8", errors="replace")
-                response = HttpResponse(url, handle.code, handle.headers.get("Content-Type", ""),
-                                        body, final_url=handle.geturl())
-        except (TimeoutError, socket.timeout):
-            response.error = "timeout"
-        except urllib.error.URLError as exc:
-            response.error = "timeout" if isinstance(exc.reason, (TimeoutError, socket.timeout)) else "conn:unreachable"
-        except (OSError, EOFError, ValueError):
-            response.error = "conn:read failed"
+                    handle = urllib.request.urlopen(request, timeout=timeout)
+                except urllib.error.HTTPError as exc:
+                    handle = exc
+                with handle:
+                    payload = handle.read()
+                    if "gzip" in handle.headers.get("Content-Encoding", "").lower():
+                        payload = gzip.decompress(payload)
+                    charset = handle.headers.get_content_charset() or "utf-8"
+                    try:
+                        body = payload.decode(charset, errors="replace")
+                    except LookupError:
+                        body = payload.decode("utf-8", errors="replace")
+                    response = HttpResponse(url, handle.code, handle.headers.get("Content-Type", ""),
+                                            body, final_url=handle.geturl())
+                break
+            except (TimeoutError, socket.timeout):
+                response.error = "timeout"
+                break
+            except urllib.error.URLError as exc:
+                if isinstance(exc.reason, (TimeoutError, socket.timeout)):
+                    response.error = "timeout"
+                    break
+                response.error = "conn:unreachable"
+            except (OSError, EOFError, ValueError):
+                response.error = "conn:read failed"
+            if attempt < 2:
+                time.sleep(0.2 * (attempt + 1))
         response.elapsed_s = time.monotonic() - started
         if self.raw_dir is not None:
             source_id = _source_id(url)
