@@ -159,10 +159,12 @@ def test_atom_feed_and_extended_sources_fetching(tmp_path):
     assert "Austin-based Kestrel AI" in parsed.items[0].body
 
     assert len(P0_SOURCES) == 11
-    assert len(EXTENDED_SOURCES) == 6
-    assert len(ALL_SOURCES) == 17
+    assert len(EXTENDED_SOURCES) == 7
+    assert len(ALL_SOURCES) == 18
     assert display_rank("cbn_ai") == DISPLAY_ORDER.index("Crunchbase News")
     assert display_name("prn_vc") == "PR Newswire"
+    assert display_name("siliconangle") == "SiliconANGLE"
+    assert display_name("eu_startups") == "EU-Startups"
     assert name_for_url("https://pulse2.com/2026/11/deal/") == "Pulse 2.0"
 
     # 验证所有扩展源（含单页静态 .rss 的 prn_vc）在首次回补抓时均正常成功。
@@ -400,4 +402,21 @@ def test_end_to_end_pipeline_with_manifest_path_extended_sources_and_site(tmp_pa
     not_connected_names = {entry["name"] for entry in internal_status["not_connected"]}
     assert "Axios Pro Rata 邮件" in not_connected_names
     assert "Crunchbase 数据库" in not_connected_names
+    assert "VentureBeat" in not_connected_names
     assert "Pulse 2.0" not in not_connected_names
+
+
+def test_robots_wildcard_rule_supports_both_encoded_and_literal_wildcards():
+    from types import SimpleNamespace
+    from vcradar.robots import _WildcardRule
+
+    for raw_path in ("/companies?%2A", "/companies?*"):
+        rule = _WildcardRule(SimpleNamespace(path=raw_path, allowance=False))
+        assert not rule.applies_to("/companies")
+        assert rule.applies_to("/companies?batch=Fall+2026")
+
+    for end_path in ("/feed/%24", "/feed/$"):
+        rule = _WildcardRule(SimpleNamespace(path=end_path, allowance=True))
+        assert rule.applies_to("/feed/")
+        assert not rule.applies_to("/feed/extra")
+

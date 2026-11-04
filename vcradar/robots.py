@@ -20,9 +20,11 @@ class _WildcardRule:
         self.path, self.allowance = rule.path, rule.allowance
 
     def applies_to(self, filename):
-        # robotparser 保留通配符为 %2A，补足 /companies?* 这类路径的匹配。
-        pattern = re.escape(self.path).replace("%2A", ".*")
-        if pattern.endswith("%24"):
+        # 兼容不同 Python 3.13 小版本：robotparser 可能保留字面量 */$ 或编码为 %2A/%24。
+        pattern = re.escape(self.path).replace(r"\*", ".*").replace("%2A", ".*")
+        if pattern.endswith(r"\$"):
+            pattern = pattern[:-2] + "$"
+        elif pattern.endswith("%24"):
             pattern = pattern[:-3] + "$"
         return re.match(pattern, filename) is not None
 
@@ -88,7 +90,12 @@ class RobotsChecker:
             except (OSError, ValueError, KeyError, TypeError):
                 loaded = False
             if not loaded:
-                response = self.transport.get(f"{parsed.scheme}://{parsed.netloc}/robots.txt", timeout=30.0)
+                robot_url = f"{parsed.scheme}://{parsed.netloc}/robots.txt"
+                response = self.transport.get(robot_url, timeout=30.0)
+                for _ in range(2):
+                    if response.status is not None or response.error not in ("conn:unreachable", "conn:read failed"):
+                        break
+                    response = self.transport.get(robot_url, timeout=30.0)
                 status, body = response.status, response.body
                 # PRD：5xx/超时按当天禁止缓存；仅本机临时断连（conn:*）不落盘，避免一次瞬断锁死全天。
                 if isinstance(status, int) or (status is None and response.error == "timeout"):

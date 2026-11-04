@@ -24,9 +24,10 @@ EXTENDED_SOURCES: list[SourceDef] = [
     SourceDef("cbn_ai", "Crunchbase News", "ai", "https://news.crunchbase.com/sections/ai/feed/", "rss", 4, 11),
     SourceDef("prn_vc", "PR Newswire", "venture-capital", "https://www.prnewswire.com/rss/financial-services-latest-news/venture-capital-list.rss", "rss", 2, 12),
     SourceDef("pulse2", "Pulse 2.0", "feed", "https://pulse2.com/feed/", "rss", 2, 13),
-    SourceDef("venturebeat", "VentureBeat", "ai", "https://venturebeat.com/category/ai/feed/", "rss", 2, 14),
-    SourceDef("geekwire", "GeekWire", "startups", "https://www.geekwire.com/startups/feed/", "rss", 3, 15),
-    SourceDef("techstartups", "TechStartups", "feed", "https://techstartups.com/feed/", "rss", 2, 16),
+    SourceDef("siliconangle", "SiliconANGLE", "feed", "https://siliconangle.com/feed/", "rss", 2, 14),
+    SourceDef("eu_startups", "EU-Startups", "feed", "https://www.eu-startups.com/feed/", "rss", 3, 15),
+    SourceDef("geekwire", "GeekWire", "startups", "https://www.geekwire.com/startups/feed/", "rss", 3, 16),
+    SourceDef("techstartups", "TechStartups", "feed", "https://techstartups.com/feed/", "rss", 2, 17),
 ]
 
 ALL_SOURCES: list[SourceDef] = [*P0_SOURCES, *EXTENDED_SOURCES]
@@ -34,7 +35,7 @@ ALL_SOURCES: list[SourceDef] = [*P0_SOURCES, *EXTENDED_SOURCES]
 # 展示顺序不使用抓取优先级；Term Sheet 仍然最先抓、最后显示。
 DISPLAY_ORDER = ("TechCrunch", "Crunchbase News", "YC Launches", "YC 公司目录",
                  "Launch HN", "StrictlyVC", "AlleyWatch", "Term Sheet")
-EXTENDED_DISPLAY_ORDER = ("PR Newswire", "Pulse 2.0", "VentureBeat", "GeekWire", "TechStartups")
+EXTENDED_DISPLAY_ORDER = ("PR Newswire", "Pulse 2.0", "SiliconANGLE", "EU-Startups", "GeekWire", "TechStartups")
 ALL_DISPLAY_ORDER = (*DISPLAY_ORDER, *EXTENDED_DISPLAY_ORDER)
 _DISPLAY_NAMES = {source.id: source.name for source in ALL_SOURCES}
 _DISPLAY_RANKS = {source_id: ALL_DISPLAY_ORDER.index(name) for source_id, name in _DISPLAY_NAMES.items()}

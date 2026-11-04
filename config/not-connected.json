@@ -67,6 +67,12 @@
       "reason": "公开页面受登录墙与 robots 限制，官方搜索接口需商业付费配额"
     },
     {
+      "name": "VentureBeat",
+      "category": "科技创投媒体",
+      "feasible": false,
+      "reason": "主站 /feed/ 已启用 Vercel Security Checkpoint 挑战页拦截，旧版分类源 /category/ai/feed/ 自 2026-08-27 停更"
+    },
+    {
       "name": "Wellfound",
       "category": "创投目录",
       "feasible": false,
