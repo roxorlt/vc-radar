@@ -420,3 +420,37 @@ def test_robots_wildcard_rule_supports_both_encoded_and_literal_wildcards():
         assert rule.applies_to("/feed/")
         assert not rule.applies_to("/feed/extra")
 
+
+def test_urllib_transport_retries_transient_connection_drop(monkeypatch):
+    import io
+    import urllib.error
+    from email.message import Message
+    from vcradar.http import UrllibTransport
+
+    calls = 0
+
+    class OkReply(io.BytesIO):
+        def __init__(self):
+            super().__init__(b'{"ok":true}')
+            self.code = 200
+            self.headers = Message()
+            self.headers["Content-Type"] = "application/json"
+
+        def geturl(self):
+            return "https://example.invalid/api"
+
+    def flaky_open(request, timeout):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise urllib.error.URLError("transient tls reset")
+        return OkReply()
+
+    monkeypatch.setattr("urllib.request.urlopen", flaky_open)
+    monkeypatch.setattr("vcradar.http.time.sleep", lambda _: None)
+    resp = UrllibTransport().get("https://example.invalid/api", timeout=5)
+    assert calls == 2
+    assert resp.status == 200
+    assert resp.error is None
+
+
