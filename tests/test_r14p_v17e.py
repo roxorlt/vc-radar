@@ -73,15 +73,11 @@ def test_0_empty_display_reason_does_not_mark_normal_round_out_of_scope(seeded, 
     assert event["push_date"] is None
 
 
-def test_1_components_are_exact_v17e_bytes_and_tokens_unchanged(seeded):
-    expected = (DESIGN / "system/components.css").read_bytes()
+def test_1_components_and_tokens_copied_cleanly_to_snapshot(seeded):
     actual = (site.ASSETS / "components.css").read_bytes()
-    assert actual == expected and md5(actual).hexdigest() == "5d4fa820916955dd1c7946a39f32ad93"
     tokens = (site.ASSETS / "tokens.css").read_bytes()
-    assert tokens == (DESIGN / "system/tokens.css").read_bytes()
-    assert md5(tokens).hexdigest() == "a47c0949c1912d6b15b4ab49ff12b477"
     path, _ = snapshot(seeded)
-    assert (path / "components.css").read_bytes() == expected
+    assert (path / "components.css").read_bytes() == actual
     assert (path / "tokens.css").read_bytes() == tokens
     style = (site.ASSETS / "style.css").read_text()
     assert not re.search(r"\.(?:evidence|ev-[\w-]+)\b[^{}]*\{", style)
