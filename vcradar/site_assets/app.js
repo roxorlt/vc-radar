@@ -2,6 +2,10 @@
 const W = {};
 const useWording = data => Object.assign(W, data.wording || {});
 const defaultFilters = () => ({period:"all", tag:"all", round:"all", status:"all", backfill:false, unsentOnly:false});
+function activeFilterCount(filters) {
+  return Number(filters.period !== "all") + Number(filters.tag !== "all") +
+    Number(filters.round !== "all") + Number(filters.status !== "all") + Number(!!filters.backfill);
+}
 function filtersForRoute(hash, previous, filters) {
   if (hash !== previous && hash === "#backfill") Object.assign(filters, defaultFilters(), {unsentOnly:true});
   if (hash !== previous && hash !== "#backfill") filters.unsentOnly = false;
@@ -180,12 +184,16 @@ function filterRow(filters, key, label, options) {
 }
 function listHtml(data, filters) {
   useWording(data);
-  let html = `<div class="tb"><button class="btn fbtn" type="button" id="open-filters" aria-controls="filter-panel" aria-expanded="false">${icon("filter")}筛选</button></div><div id="filter-scrim" class="scrim" hidden></div><section class="fpanel drawer" id="filter-panel" aria-labelledby="filter-title"><div class="drawer-grip"></div><div class="drawer-h"><h2 id="filter-title">筛选</h2><button type="button" class="btn text" data-close-filters aria-label="关闭筛选">${icon("close")}</button></div><div class="filters">${filterRow(filters, "period", W.filter_period, [["week", W.week], ["issue", W.select_date, !data.digests.length], ["30", W.recent], ["all", W.all]])}`;
+  const active = activeFilterCount(filters);
+  const badge = active ? `<span class="n tnum">${active}</span>` : "";
+  const quickReset = active ? `<button type="button" class="btn text" data-clear-filters>重置筛选</button>` : "";
+  const inlineReset = active ? `<button type="button" class="clear-f" data-clear-filters>重置筛选</button>` : "";
+  let html = `<div class="tb"><button class="btn fbtn" type="button" id="open-filters" aria-controls="filter-panel" aria-expanded="false">${icon("filter")}筛选${badge}</button>${quickReset}</div><div id="filter-scrim" class="scrim" hidden></div><section class="fpanel drawer" id="filter-panel" aria-labelledby="filter-title"><div class="drawer-grip"></div><div class="drawer-h"><h2 id="filter-title">筛选</h2><button type="button" class="btn text" data-close-filters aria-label="关闭筛选">${icon("close")}</button></div><div class="filters">${filterRow(filters, "period", W.filter_period, [["week", W.week], ["issue", W.select_date, !data.digests.length], ["30", W.recent], ["all", W.all]])}`;
   if (filters.period.startsWith("date:")) html += `<div class="filter-line"><label for="issue" class="lab">${esc(W.issue)}</label><span class="select"><select id="issue">${data.digests.map(d => `<option value="date:${d.date}"${filters.period === `date:${d.date}` ? " selected" : ""}>${esc(formatDate(d.date, data.meta.today))}那期</option>`).join("")}</select>${icon("down")}</span></div>`;
   html += filterRow(filters, "tag", W.tag, [W.all, W.ai, W.social, W.neither, W.tag_pending].map((v, i) => [i ? v : "all", v]));
   html += filterRow(filters, "round", W.round, [W.all, W.angel, W.seed, W.series_a].map((v, i) => [i ? v : "all", v]));
   html += filterRow(filters, "status", W.status, [W.all, W.admitted, W.round_pending].map((v, i) => [i ? v : "all", v]));
-  html += `<div class="filter-line"><span class="lab"></span><div class="chips"><button type="button" class="chip${filters.backfill ? " on" : ""}" aria-pressed="${!!filters.backfill}" data-backfill-mark>${esc(W.supplement)}</button></div></div></div><div class="drawer-f"><button type="button" class="btn" data-reset-filters>重置</button><button type="button" class="btn primary" data-close-filters>完成</button></div></section><div id="list-results">`;
+  html += `<div class="filter-line"><span class="lab"></span><div class="chips"><button type="button" class="chip${filters.backfill ? " on" : ""}" aria-pressed="${!!filters.backfill}" data-backfill-mark>${esc(W.supplement)}</button>${inlineReset}</div></div></div><div class="drawer-f"><button type="button" class="btn" data-reset-filters>重置</button><button type="button" class="btn primary" data-close-filters>完成</button></div></section><div id="list-results">`;
   const events = selectEvents(data, filters);
   if (filters.unsentOnly) html += `<div class="notice">${esc(W.supplement_unsent)} <a href="#list" data-clear-backfill>${esc(W.view_all)}</a></div>`;
   html += dateCards(data, events, true);
@@ -390,7 +398,7 @@ function createDetailLoader(data, fetcher = url => fetch(url)) {
   };
 }
 
-if (typeof module !== "undefined") module.exports = {selectEvents, filtersForRoute, defaultFilters, external, linkedText, weekHtml, listHtml, detailHtml, ycHtml, createDetailLoader, splitSummary, formatDate, sourceLabels, samePage};
+if (typeof module !== "undefined") module.exports = {selectEvents, filtersForRoute, defaultFilters, activeFilterCount, external, linkedText, weekHtml, listHtml, detailHtml, ycHtml, createDetailLoader, splitSummary, formatDate, sourceLabels, samePage};
 if (typeof document !== "undefined") {
   let data, loadDetail, renderVersion = 0, lastHash, drawerOpen = false, detailObserver;
   const filters = defaultFilters();
@@ -400,6 +408,10 @@ if (typeof document !== "undefined") {
     if (value === "light" || value === "dark") root.setAttribute("data-theme", value); else root.removeAttribute("data-theme");
     try { localStorage.setItem("vcr-theme", value); } catch (_) {}
     document.querySelectorAll("[data-theme-set]").forEach(button => button.setAttribute("aria-pressed", String(button.dataset.themeSet === value)));
+  }
+  function cycleTheme() {
+    const current = document.documentElement?.getAttribute("data-theme") || (typeof matchMedia === "function" && matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    setTheme(current === "dark" ? "light" : "dark");
   }
   let savedTheme = "system";
   try { savedTheme = localStorage.getItem("vcr-theme") || "system"; } catch (_) {}
@@ -454,7 +466,7 @@ if (typeof document !== "undefined") {
         const detail = await loadDetail(id);
         html = detail ? detailHtml(detail, id) : empty(W.no_company);
       } catch (_) {
-        html = empty(W.detail_failed) + `<button type="button" id="retry-detail">${esc(W.retry)}</button>`;
+        html = empty(W.detail_failed) + `<button type="button" class="btn" id="retry-detail">${esc(W.retry)}</button>`;
       }
       if (version !== renderVersion) return;
     } else html = route === "list" ? listHtml(data, filters) : route === "yc" ? ycHtml(data) : weekHtml(data);
@@ -481,13 +493,10 @@ if (typeof document !== "undefined") {
     }
     const theme = e.target.closest("[data-theme-set]");
     if (theme) { setTheme(theme.dataset.themeSet); return; }
-    if (e.target.closest("[data-theme-cycle]")) {
-      const current = document.documentElement.getAttribute("data-theme") || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-      setTheme(current === "dark" ? "light" : "dark"); return;
-    }
+    if (e.target.closest("[data-theme-cycle]")) { cycleTheme(); return; }
     if (e.target.closest("#open-filters")) { setDrawer(true); return; }
     if (e.target.closest("[data-close-filters], #filter-scrim")) { setDrawer(false, {}); return; }
-    if (e.target.closest("[data-reset-filters]")) { Object.assign(filters, defaultFilters()); render(); return; }
+    if (e.target.closest("[data-reset-filters], [data-clear-filters]")) { Object.assign(filters, defaultFilters()); render(); return; }
     if (e.target.closest("#retry-detail")) { render(); return; }
     if (e.target.closest("[data-clear-backfill]")) { Object.assign(filters, defaultFilters()); render(); return; }
     if (e.target.closest("[data-backfill-mark]")) { filters.backfill = !filters.backfill; render(); return; }
@@ -501,13 +510,28 @@ if (typeof document !== "undefined") {
     if (e.target.id === "issue" && e.target.value) { filters.period = e.target.value; render(); }
   });
   document.addEventListener("keydown", e => {
-    if (!drawerOpen) return;
-    if (e.key === "Escape") { e.preventDefault(); setDrawer(false, {}); return; }
-    if (e.key === "Tab") {
-      const focusable = [...document.getElementById("filter-panel").querySelectorAll("button:not([disabled]), select, a[href]")];
-      const first = focusable[0], last = focusable[focusable.length - 1];
-      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
-      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    if (drawerOpen) {
+      if (e.key === "Escape") { e.preventDefault(); setDrawer(false, {}); return; }
+      if (e.key === "Tab") {
+        const focusable = [...document.getElementById("filter-panel").querySelectorAll("button:not([disabled]), select, a[href]")];
+        const first = focusable[0], last = focusable[focusable.length - 1];
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+      }
+      return;
+    }
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const tagName = document.activeElement?.tagName;
+    if (tagName === "INPUT" || tagName === "SELECT" || tagName === "TEXTAREA") return;
+    if (e.key === "t") { e.preventDefault(); cycleTheme(); return; }
+    if (e.key === "j" || e.key === "k") {
+      const links = [...document.querySelectorAll(".co-card .co-link")];
+      if (!links.length) return;
+      e.preventDefault();
+      const idx = links.indexOf(document.activeElement);
+      const next = e.key === "j" ? (idx < 0 ? 0 : Math.min(idx + 1, links.length - 1)) : (idx <= 0 ? 0 : idx - 1);
+      links[next]?.focus();
+      links[next]?.scrollIntoView?.({block:"nearest"});
     }
   });
   window.addEventListener("resize", () => { if (drawerOpen && matchMedia("(min-width: 1024px)").matches) setDrawer(false); });
