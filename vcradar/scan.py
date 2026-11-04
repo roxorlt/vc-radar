@@ -22,6 +22,7 @@ from .fetcher import has_missed, missed_interval
 from .labels import decide_dim, keyword_hit, overall
 from .models import Card, CardSource, Extracted, FetchOutcome, LabelDim, PendingLine, RawItem
 from .sources import registry
+from .sources.yc_directory import batch_in_window
 
 MARK_ORDER = ("新一轮", "大额", "补抓", "金额待核")
 FILTER_ORDER = ("批次超过 12 个月", "轮次不在范围")
@@ -339,9 +340,7 @@ def filter_reasons(item: RawItem, ext: Extracted, country: str, round_norm: str,
     """满足的全部原因，按批次超过 12 个月、轮次不在范围排序；国家不参与过滤。"""
     reasons = []
     batch = item.structured.get("yc_batch")
-    if batch and latest_yc_batches and str(batch).strip().casefold() not in {
-        name.strip().casefold() for name in latest_yc_batches[:4]
-    }:
+    if batch and latest_yc_batches and not batch_in_window(batch, latest_yc_batches):
         reasons.append("批次超过 12 个月")
     if round_norm == "过滤" or ext.is_fund_raise or ext.is_debt_only:
         reasons.append("轮次不在范围")
@@ -832,7 +831,7 @@ def _effective_extracted(item: RawItem, ext: Extracted, batches: list[str]) -> E
                      website=ext.website or item.structured.get("website"),
                      one_liner=ext.one_liner or item.structured.get("one_liner", ""))
     batch = item.structured.get("yc_batch")
-    recent = batch and str(batch).casefold() in {name.casefold() for name in batches[:4]}
+    recent = bool(batch and batch_in_window(batch, batches))
     if (_is_yc_directory(item) or _is_yc_launch(item)) and recent and (
         not _present(result.round_text) or "yc" in result.round_text.casefold()
     ):

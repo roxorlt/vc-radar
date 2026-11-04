@@ -39,7 +39,7 @@ _QUOTES = str.maketrans({"“": '"', "”": '"', "‘": "'", "’": "'", "\u200b
 def usage_cost(usage: dict, started_at: datetime) -> float:
     """按调用开始的北京时间及缓存命中量估算文本抽取费用（元）。"""
     stamp = started_at.astimezone(BJ)
-    peak = (stamp.weekday() < 5 and cal.is_cn_workday(stamp.date())
+    peak = (stamp.weekday() < 5 and cal.is_cn_workday_or_weekday(stamp.date())
             and (9 <= stamp.hour < 12 or 14 <= stamp.hour < 18))
     prompt = max(0, int(usage.get("prompt_tokens", 0)))
     hit = min(prompt, max(0, int(usage.get("prompt_cache_hit_tokens", 0))))

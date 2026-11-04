@@ -19,15 +19,29 @@ P0_SOURCES: list[SourceDef] = [
     SourceDef("alleywatch", "AlleyWatch", "funding", "https://www.alleywatch.com/category/funding/feed/", "rss", 2, 10),
 ]
 
+# 公开可抓、遵守 robots.txt 的扩展信源（--extended-sources 或 enable_extended_sources=true 启用）。
+EXTENDED_SOURCES: list[SourceDef] = [
+    SourceDef("cbn_ai", "Crunchbase News", "ai", "https://news.crunchbase.com/sections/ai/feed/", "rss", 4, 11),
+    SourceDef("prn_vc", "PR Newswire", "venture-capital", "https://www.prnewswire.com/rss/financial-services-latest-news/venture-capital-list.rss", "rss", 2, 12),
+    SourceDef("pulse2", "Pulse 2.0", "feed", "https://pulse2.com/feed/", "rss", 2, 13),
+    SourceDef("venturebeat", "VentureBeat", "ai", "https://venturebeat.com/category/ai/feed/", "rss", 2, 14),
+    SourceDef("geekwire", "GeekWire", "startups", "https://www.geekwire.com/startups/feed/", "rss", 3, 15),
+    SourceDef("techstartups", "TechStartups", "feed", "https://techstartups.com/feed/", "rss", 2, 16),
+]
+
+ALL_SOURCES: list[SourceDef] = [*P0_SOURCES, *EXTENDED_SOURCES]
+
 # 展示顺序不使用抓取优先级；Term Sheet 仍然最先抓、最后显示。
 DISPLAY_ORDER = ("TechCrunch", "Crunchbase News", "YC Launches", "YC 公司目录",
                  "Launch HN", "StrictlyVC", "AlleyWatch", "Term Sheet")
-_DISPLAY_NAMES = {source.id: source.name for source in P0_SOURCES}
-_DISPLAY_RANKS = {source_id: DISPLAY_ORDER.index(name) for source_id, name in _DISPLAY_NAMES.items()}
+EXTENDED_DISPLAY_ORDER = ("PR Newswire", "Pulse 2.0", "VentureBeat", "GeekWire", "TechStartups")
+ALL_DISPLAY_ORDER = (*DISPLAY_ORDER, *EXTENDED_DISPLAY_ORDER)
+_DISPLAY_NAMES = {source.id: source.name for source in ALL_SOURCES}
+_DISPLAY_RANKS = {source_id: ALL_DISPLAY_ORDER.index(name) for source_id, name in _DISPLAY_NAMES.items()}
 
 
 def display_rank(source_id: str) -> int:
-    """返回条目所属信源的展示序号；未知信源排在最后。"""
+    """返回条目所属信源的展示序号；未知信源排在默认 P0 列表之后。"""
     return _DISPLAY_RANKS.get(source_id, len(DISPLAY_ORDER))
 
 
@@ -36,7 +50,7 @@ def _host(url: str) -> str:
     return host[4:] if host.startswith("www.") else host
 
 
-_URL_NAMES = sorted(((_host(s.url), urlsplit(s.url).path.rstrip("/"), s.name) for s in P0_SOURCES),
+_URL_NAMES = sorted(((_host(s.url), urlsplit(s.url).path.rstrip("/"), s.name) for s in ALL_SOURCES),
                     key=lambda item: -len(item[1]))
 
 

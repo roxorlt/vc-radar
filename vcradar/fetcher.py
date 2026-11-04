@@ -17,7 +17,7 @@ from .config import BJ, ET
 from .models import ErrorType, FetchOutcome, FetchResult, FetchRunRecord, HttpResponse, RawItem, SourceDef, SourceState
 from .http import Transport, save_raw_response
 from .robots import RobotsChecker
-from .sources import alleywatch, crunchbase, launch_hn, strictlyvc, techcrunch, termsheet, yc_directory, yc_launches
+from .sources import alleywatch, crunchbase, launch_hn, rss, strictlyvc, techcrunch, termsheet, yc_directory, yc_launches
 from .sources.common import Parsed, parse_time
 
 Sleep = Callable[[float], None]
@@ -259,14 +259,18 @@ def merge_missed_ranges(segments, baseline_at=None, *, reference=None):
 def _feeds(session):
     src, state, stats = session.src, session.state, session.stats
     if src.kind == "rss":
-        parser = alleywatch.parse if src.id == "alleywatch" else crunchbase.parse if src.name == "Crunchbase News" else techcrunch.parse
+        parser = (alleywatch.parse if src.id == "alleywatch"
+                  else crunchbase.parse if src.name == "Crunchbase News"
+                  else techcrunch.parse if src.name == "TechCrunch"
+                  else rss.parse)
         kind = "rss"
     else:
         parser = launch_hn.parse if src.id == "launch_hn" else yc_launches.parse
         kind = "json"
     seen = set()
     oldest = None
-    for page in range(1, 4 if not state.last_ok else 2):
+    max_pages = 1 if (state.last_ok or src.id == "prn_vc") else 3
+    for page in range(1, max_pages + 1):
         stats.pages = page
         try:
             parsed = parser(session.get(_page_url(src, page), kind), src.id)
@@ -314,7 +318,7 @@ def _directory(session):
         batches_response = session.get(endpoint, "json", headers, yc_directory.query_body())
         if batches_response.status != 200:
             raise ValueError
-        batches = yc_directory.latest_batches(batches_response)
+        batches = yc_directory.latest_batches(batches_response, as_of=session.now.date())
         if not batches:
             raise ValueError
         for batch in batches:

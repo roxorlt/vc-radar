@@ -26,8 +26,8 @@ from .config import BJ, Config, UA
 from .guard import check_no_fictional, check_no_placeholder
 from .models import DigestData, FetchResult, HttpResponse
 from .robots import RobotsChecker
-from .sources.registry import DISPLAY_ORDER, P0_SOURCES, display_rank
-from .sources.yc_directory import batch_order
+from .sources.registry import ALL_SOURCES, DISPLAY_ORDER, P0_SOURCES, display_rank
+from .sources.yc_directory import batch_order, canonical_latest_batches
 
 _FUNDING = re.compile(
     r"raise[sd]?|funding|seed|pre-seed|Series [A-Z]|\$\d[\d.]*\s?(?:M|B|million|billion)|"
@@ -239,7 +239,7 @@ class ModelSession:
 
 def _peak(stamp):
     hour = stamp.hour + stamp.minute / 60
-    return stamp.weekday() < 5 and cal.is_cn_workday(stamp.date()) and (9 <= hour < 12 or 14 <= hour < 18)
+    return stamp.weekday() < 5 and cal.is_cn_workday_or_weekday(stamp.date()) and (9 <= hour < 12 or 14 <= hour < 18)
 
 
 @contextmanager
@@ -869,8 +869,8 @@ def _status(outcomes, lines, listing, incomplete):
 
 
 def _successful_sources(outcomes, states):
-    enabled_p0 = {source.id for source in P0_SOURCES}
-    return {outcome.source.name for outcome in outcomes if outcome.source.id in enabled_p0 and outcome.ok
+    enabled_ids = {source.id for source in ALL_SOURCES}
+    return {outcome.source.name for outcome in outcomes if outcome.source.id in enabled_ids and outcome.ok
             and not outcome.stopped_now and states[outcome.source.id].crawl_status != "已停抓"}
 
 
@@ -1089,10 +1089,11 @@ def _run_connected_with_log(conn, cfg, args, clock, today):
     window = _issue_window(conn, cfg, today, existing)
     budget = _Budget(cfg, clock, scheduled=not args.first_issue and not (
         cfg.test_mode and args.now is not None and args.now >= daytime(8, 50)))
-    db.sync_sources(conn, P0_SOURCES)
+    configured_sources = ALL_SOURCES if (cfg.enable_extended_sources or getattr(args, "extended_sources", False)) else P0_SOURCES
+    db.sync_sources(conn, configured_sources)
     initial = db.is_empty(conn)
     states = db.load_source_states(conn)
-    sources = [source for source in P0_SOURCES if conn.execute("SELECT enabled FROM source WHERE id=?", (source.id,)).fetchone()[0]]
+    sources = [source for source in configured_sources if conn.execute("SELECT enabled FROM source WHERE id=?", (source.id,)).fetchone()[0]]
     outcomes, entries = [], []
     incomplete = False
     coverage_key = f"pipe:first_incomplete:{scan.baseline_cutoff(today)}"
@@ -1165,7 +1166,10 @@ def _run_connected_with_log(conn, cfg, args, clock, today):
             _article_bodies(entries, source_map, transport, robots, cfg, clock, budget)
         finally:
             transport.close()
-        batches = sorted({str(item.structured["yc_batch"]) for outcome in outcomes for item in outcome.items if item.structured.get("yc_batch")}, key=batch_order, reverse=True)[:4]
+        batches = canonical_latest_batches(
+            (str(item.structured["yc_batch"]) for outcome in outcomes for item in outcome.items if item.structured.get("yc_batch")),
+            as_of=today,
+        )
         raw_client = (_MissingModel(cfg.model) if cfg.test_mode and not args.fixture else
                       model_client(cfg, args.fixture, len(entries)))
         if isinstance(raw_client, _MissingModel):

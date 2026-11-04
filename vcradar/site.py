@@ -41,22 +41,17 @@ FUNDING_FIELDS = {"round": "轮次", "amount": "金额", "leads": "领投", "fol
 PAST_FUNDING = re.compile(r"\b(?:previous(?:ly)?|earlier|prior|last\s+year)\b|之前|此前|上一轮|以前|早前|先前|上轮|前一轮|去年", re.I)
 ERROR_TEXT = wording.SOURCE_ERRORS
 
-NOT_CONNECTED = (
-    ("Axios Pro Rata 邮件", "网页限制访问，邮件尚未接入"),
-    ("Term Sheet 邮件", "邮件尚未接入"), ("StrictlyVC 邮件", "邮件备份尚未接入"),
-    ("Crunchbase Daily 邮件", "邮件尚未接入"), ("X", "账号搜索尚未接入"),
-    ("Pulse 2.0", "尚未接入"), ("PR Newswire Venture Capital", "尚未接入"),
-    ("Crunchbase News AI 栏目", "与现有栏目重复较多，后续接入"),
-    ("SEC Form D", "无关信息较多，后续接入"), ("Product Hunt", "融资信息较少，后续接入"),
-    ("The Information 标题", "信息较少，后续接入"), ("VentureBeat", "与现有来源网站重复较多，后续接入"),
-    ("Google News", "无关信息较多，后续接入"), ("基金官网动态", "信息较少，后续接入"),
-    ("GeekWire", "信息较少，后续接入"), ("TechStartups", "与现有来源网站重复较多，后续接入"),
-    ("PitchBook The Daily Pitch 邮件", "尚未订阅"), ("Inside", "已停刊"),
-    ("Wellfound", "限制访问，且没有融资数据"), ("Crunchbase 数据库", "本期不购买"),
-    ("PitchBook", "本期不购买"), ("Dealroom", "本期不购买"), ("Tracxn", "本期不购买"),
-    ("The Information 正文", "本期不购买"), ("Axios Pro Deals", "本期不购买"),
-    ("Product Hunt 商业数据", "本期不购买"),
-)
+def _load_not_connected() -> tuple[tuple[str, str], ...]:
+    path = Path(__file__).resolve().parent.parent / "config" / "not-connected.json"
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        entries = payload.get("sources", payload) if isinstance(payload, dict) else payload
+        return tuple((str(item["name"]), str(item["reason"])) for item in entries if item.get("name") and item.get("reason"))
+    except (OSError, ValueError, TypeError, KeyError):
+        return ()
+
+
+NOT_CONNECTED = _load_not_connected()
 
 
 def _json(value, default):

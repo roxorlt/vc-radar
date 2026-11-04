@@ -16,3 +16,4 @@ total_timeout_s = 600
 per_url_timeout_s = 30
 extract_concurrency = 4
 model = "deepseek-flash"
+enable_extended_sources = false  # 设为 true 或命令行传 --extended-sources 同时启用 PR Newswire、Pulse 2.0、VentureBeat 等扩展公开源

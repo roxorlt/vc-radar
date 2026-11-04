@@ -109,7 +109,7 @@ def independent(a: dict, b: dict) -> bool:
 
 def daily_limit(cfg: Config, day: date) -> int:
     """前一自然日不是中国工作日时使用假日后上限。"""
-    return cfg.verify_daily_limit_after_break if not cal.is_cn_workday(day - timedelta(days=1)) else cfg.verify_daily_limit
+    return cfg.verify_daily_limit_after_break if not cal.is_cn_workday_or_weekday(day - timedelta(days=1)) else cfg.verify_daily_limit
 
 
 def pending_fields(company: dict, event: dict) -> list[str]:
@@ -697,7 +697,7 @@ def verify_company(context, cfg, clock, services, budget, quota, *, fields=None,
             started = clock.now()
             user = _json({"company": context["company"]["name"], "known_product_terms": context["terms"],
                           "fields": active, "results": all_rows, "pages": pages})
-            peak = started.weekday() < 5 and cal.is_cn_workday(started.date()) and (9 <= started.hour < 12 or 14 <= started.hour < 18)
+            peak = started.weekday() < 5 and cal.is_cn_workday_or_weekday(started.date()) and (9 <= started.hour < 12 or 14 <= started.hour < 18)
             model_entry = {"round": round_no, "started_at": _stamp(started), "ok": False,
                 "cost": cfg.verify_model_price_peak if peak else cfg.verify_model_price_idle}
             output["model_calls"].append(model_entry)

@@ -88,6 +88,14 @@ def is_cn_workday(d: date) -> bool:
     return d.weekday() < 5 and d not in CN_HOLIDAYS[d.year]
 
 
+def is_cn_workday_or_weekday(d: date) -> bool:
+    """已收录年份按法定假日/调休判定，未收录年份按周一至周五兜底，供计费与搜索频控使用。"""
+    try:
+        return is_cn_workday(d)
+    except CalendarMissing:
+        return d.weekday() < 5
+
+
 def is_us_workday(d: date) -> bool:
     """美国周一至周五且不在 OPM 联邦补休日表中的日期。"""
     if d.year not in US_FEDERAL_HOLIDAYS:

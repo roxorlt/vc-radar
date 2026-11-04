@@ -82,7 +82,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--rates-fail", action="store_true")
     parser.add_argument("--links-file", type=Path)
     parser.add_argument("--assume-review-site-passed", action="store_true")
+    parser.add_argument("--extended-sources", action="store_true", help="同时抓取已接入的扩展公开信源")
     args = parser.parse_args(argv)
+    if args.fixture is not None and args.fixture.name == "manifest.json":
+        args.fixture = args.fixture.parent
     if args.assume_review_site_passed and not is_test_run(args, exclude="assume_review_site_passed"):
         parser.error("--assume-review-site-passed 只能和其他测试标志一起用")
     args.test_flags = is_test_run(args)
@@ -126,7 +129,8 @@ def main(argv: list[str] | None = None) -> int:
     """运行主流程、回执同步或隔离回放，返回约定的退出码。"""
     args = parse_args(argv)
     try:
-        cfg = load_config(args.config, total_timeout_s=args.total_timeout)
+        cfg = load_config(args.config, total_timeout_s=args.total_timeout,
+                          enable_extended_sources=True if args.extended_sources else None)
         cfg.test_mode = is_test_run(args, cfg)
         if args.fix_place_names:
             # 修复入口不启动抓取、模型、发布、配置写入或测试库重置。

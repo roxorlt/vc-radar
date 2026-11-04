@@ -17,7 +17,7 @@ import sys
 from . import cal, db, extract, fx, outbox, scan, wording
 from .config import BJ, Config, is_test_run
 from .models import PushSection
-from .sources.yc_directory import batch_order
+from .sources.yc_directory import batch_in_window, batch_order, canonical_latest_batches
 
 _AMOUNTS = ("amount_currency", "amount_original", "amount_usd", "fx_rate", "fx_date", "fx_source", "fx_stale")
 _EVENT_FIELDS = ("round_norm", "round_text", "amount_text", "amount_status", *_AMOUNTS,
@@ -205,7 +205,7 @@ def _fill_summary(work, candidate, cfg, now, client):
     place_retry = False
     place_fallback = None
     for attempt in range(2):
-        price = cfg.verify_model_price_peak if (now.weekday() < 5 and cal.is_cn_workday(now.date())
+        price = cfg.verify_model_price_peak if (now.weekday() < 5 and cal.is_cn_workday_or_weekday(now.date())
             and (9 <= now.hour < 12 or 14 <= now.hour < 18)) else cfg.verify_model_price_idle
         call = {"kind": "summary", "requested_at": _stamp(now), "cost": price}
         candidate["model_calls"].append(call)
@@ -270,7 +270,7 @@ def _manifest(work, cfg, now, rates, verifier, summary_client, homepage_checker,
             targets.setdefault(cid, {"types": {"B"}, "ids": []})
     batches = {r[0] for r in work.execute("SELECT yc_batch FROM company UNION SELECT yc_batch FROM funding_event") if r[0]}
     batches.update(json.loads(r[0])["yc_batch"] for r in work.execute("SELECT structured_json FROM raw_item") if json.loads(r[0]).get("yc_batch"))
-    batches = sorted(batches, key=batch_order, reverse=True)[:4]
+    batches = canonical_latest_batches(batches, as_of=now.date())
     candidates, fixes_candidate, fixes_noncandidate = [], [], []
     for cid, target in targets.items():
         for eid in target["ids"]:
@@ -287,7 +287,7 @@ def _manifest(work, cfg, now, rates, verifier, summary_client, homepage_checker,
                 old = original[eid]
                 norm = scan.normalize_round(old["round_text"] or old["round_norm"])
                 reasons = [r for r in json.loads(old["filter_reasons_json"]) if r not in {"总部非美国", "批次超过 12 个月", "轮次不在范围"}]
-                if old["yc_batch"] and batches and old["yc_batch"] not in batches:
+                if old["yc_batch"] and batches and not batch_in_window(old["yc_batch"], batches):
                     reasons.append("批次超过 12 个月")
                 if norm == "过滤":
                     reasons.append("轮次不在范围")
@@ -932,12 +932,12 @@ class _migrated_copy:
         self._dir.cleanup()
 
 
-def run_backfill(cfg: Config, args, clock, *, verifier=None, fetcher=None, summary_client=None, balance_client=None, homepage_checker=None) -> int:
+def run_backfill(cfg: Config, args, clock, *, verifier=None, fetcher=None, summary_client=None, balance_client=None, homepage_checker=None, real_now: datetime | None = None) -> int:
     """持有运行锁执行清单或 apply；失败不生成正常推送文件。"""
     from .pipeline import _read_database, run_lock, _RunLog
     from .placenames import place_audit
     cfg = replace(cfg, test_mode=is_test_run(args, cfg))
-    now, real_now = clock.now(), datetime.now(BJ)
+    now, real_now = clock.now(), real_now or datetime.now(BJ)
     try:
         selected = latest_manifest(cfg, now=now) if args.apply else None
         if selected and selected[1].get("applied_at"):
@@ -967,7 +967,7 @@ def run_backfill(cfg: Config, args, clock, *, verifier=None, fetcher=None, summa
                         from .homepage import backfill_checker
                         homepage_checker = backfill_checker(conn, cfg, clock, fixtures=getattr(args, "search_fixtures", None))
                     manifest = create_manifest(conn, cfg, now=now, rates=rates, verifier=verifier,
-                                               summary_client=summary_client, homepage_checker=homepage_checker)
+                                               summary_client=summary_client, homepage_checker=homepage_checker, real_now=real_now)
                 if not cfg.test_mode and (manifest["searches"] or _cost(manifest)):
                     cfg.outbox_dir.mkdir(parents=True, exist_ok=True)
                     with (cfg.outbox_dir / "backfill-spend.log").open("a", encoding="utf-8") as log:

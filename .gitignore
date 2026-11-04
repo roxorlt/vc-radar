@@ -20,6 +20,7 @@ test-cache/
 __pycache__/
 *.pyc
 .pytest_cache/
+.wrangler/
 
 # 不进库：数据库、导出和备份
 *.sqlite

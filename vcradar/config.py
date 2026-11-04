@@ -59,6 +59,7 @@ class Config:
         '"{name}" {context} about contact location {exclude}',
     ])
     homepage_check_file: Path = Path(__file__).resolve().parent.parent / "config/homepage-check.json"
+    enable_extended_sources: bool = False
 
     def __post_init__(self) -> None:
         validate_link_path_template(self.link_path_template)

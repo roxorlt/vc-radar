@@ -84,8 +84,11 @@ class FixtureTransport:
     "content_type": "...", "delay_s": 0, "sequence": [ {...}, {...} ]}}。sequence 按调用次序依次返回
     （Term Sheet 403 → 重试 200 等）。没配的 URL 返回 status=None,error="conn:no fixture"。"""
     def __init__(self, fixture_dir: Path):
-        self.fixture_dir = Path(fixture_dir)
-        self.manifest = json.loads((self.fixture_dir / "manifest.json").read_text())
+        target = Path(fixture_dir)
+        if target.name == "manifest.json":
+            target = target.parent
+        self.fixture_dir = target
+        self.manifest = json.loads((self.fixture_dir / "manifest.json").read_text(encoding="utf-8"))
         self.request_log: list[dict] = []
         self._counts: dict[str, int] = {}
         self._lock = Lock()
@@ -178,11 +181,11 @@ def _log_entry(url, headers, data):
 
 
 def _source_id(url):
-    from .sources.registry import P0_SOURCES
+    from .sources.registry import ALL_SOURCES
     parsed = urlsplit(url)
     if parsed.path == "/robots.txt":
         return None
-    for src in sorted(P0_SOURCES, key=lambda s: len(s.url), reverse=True):
+    for src in sorted(ALL_SOURCES, key=lambda s: len(s.url), reverse=True):
         if url.startswith(src.url):
             return src.id
     if parsed.hostname == "content.fortune.com" and parsed.path == "/newsletter/termsheet/":
