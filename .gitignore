@@ -2,6 +2,8 @@
 .env
 *.env
 .env.*
+.dev.vars
+*.dev.vars
 !config/*.example
 # runtime data lives outside the repo (/srv/vc-radar/state)
 state/
