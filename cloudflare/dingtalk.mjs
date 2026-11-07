@@ -133,9 +133,10 @@ export function formatPatrolReceipt(
     ];
 
     admittedNew.slice(0, 4).forEach((item, idx) => {
-      const channelLabel = item.channel === "vc" ? "早期融资" : "冲榜新品";
+      const isVc = item.channel === "vc" || Boolean(item.has_vc);
+      const channelLabel = item.channel === "vc" ? "早期融资" : isVc ? "冲榜+早期融资" : "冲榜新品";
       const metaParts = [channelLabel];
-      if (item.channel === "vc" && item.funding) metaParts.push(item.funding);
+      if (isVc && item.funding) metaParts.push(item.funding);
       else if (item.platform) metaParts.push(item.platform);
       if (Array.isArray(item.mech_tags) && item.mech_tags[0]) metaParts.push(item.mech_tags[0]);
       const name = sanitizeDingtalkInline(item.name || item.id || "新产品", 48);

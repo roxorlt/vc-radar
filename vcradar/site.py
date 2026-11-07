@@ -730,12 +730,20 @@ def _social_products(conn, cfg: Config) -> list[dict]:
                         "source": _scrub_product_copy(ref.get("source") or ""),
                         "url": ru,
                     })
+        origin_clean = "bigtech" if row.get("origin_type") == "bigtech" else "indie"
+        funding_clean = _scrub_product_copy(row.get("funding_text") or "")
+        unverified_funding = {"", "未公开披露融资", "早期独立产品", "未公开披露", "金额未披露"}
+        has_vc = origin_clean != "bigtech" and (
+            row["channel"] == "vc"
+            or (bool(funding_clean) and funding_clean not in unverified_funding and not funding_clean.endswith("旗下新包"))
+        )
         items.append({
             "id": pid,
             "name": _scrub_product_copy(row["name"]) or row["name"],
             "channel": "vc" if row["channel"] == "vc" else "chart",
+            "has_vc": has_vc,
             "live_status": row["live_status"] if row["live_status"] in {"ios", "android", "web", "waitlist"} else "ios",
-            "origin": "bigtech" if row.get("origin_type") == "bigtech" else "indie",
+            "origin": origin_clean,
             "company": _scrub_product_copy(row.get("company_name") or row["name"]),
             "company_id": row.get("company_id") or None,
             "app_store_url": _safe_product_url(row.get("app_store_url") or ""),
@@ -751,7 +759,7 @@ def _social_products(conn, cfg: Config) -> list[dict]:
             "cross_check": cc_clean,
             "screenshots": shots_clean[:6],
             "ref_links": refs_clean[:6],
-            "funding": _scrub_product_copy(row.get("funding_text") or ""),
+            "funding": funding_clean,
             "investors": _scrub_product_copy(row.get("investors_text") or ""),
             "release_status": _scrub_product_copy(row.get("release_status_text") or ""),
             "source_note": _scrub_product_copy(row.get("source_note") or ""),

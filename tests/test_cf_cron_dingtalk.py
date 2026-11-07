@@ -627,3 +627,157 @@ console.log(JSON.stringify({{
     assert out["hasReviewInPrompt"] is True
     assert out["compactCounts"] == [25000, 12000, 3400]
 
+
+def test_funding_backfill_dual_channel_and_chinese_localization_in_worker():
+    """验证冲榜产品检出早期出资后自动回填 funding/investors + has_vc=true、垃圾 ASO 域名剔除、以及全中文展示转换。"""
+    script = r"""
+import { runSocialRadarPatrol } from "./cloudflare/pipeline.mjs";
+import { formatPatrolReceipt } from "./cloudflare/dingtalk.mjs";
+
+const store = new Map();
+const r2 = {
+  async head(key) { return store.has(key) ? { key } : null; },
+  async get(key) {
+    if (!store.has(key)) return null;
+    const bytes = store.get(key);
+    return { body: bytes, async text() { return new TextDecoder().decode(bytes); } };
+  },
+  async put(key, val) {
+    store.set(key, typeof val === "string" ? new TextEncoder().encode(val) : new Uint8Array(val));
+  },
+};
+
+const searchQueries = [];
+async function mockFetch(rawUrl, init = {}) {
+  const url = String(rawUrl);
+  if (url.includes("itunes.apple.com/jp/rss/topfreeapplications") && url.includes("genre=6005")) {
+    return new Response(JSON.stringify({
+      feed: {
+        entry: [
+          { id: { attributes: { "im:id": "6750000111" } } },
+        ],
+      },
+    }), { status: 200 });
+  }
+  if (url.includes("itunes.apple.com/") && url.includes("/rss/topfreeapplications")) {
+    return new Response(JSON.stringify({ feed: { entry: [] } }), { status: 200 });
+  }
+  if (url.includes("itunes.apple.com/lookup")) {
+    return new Response(JSON.stringify({
+      results: [{
+        trackId: 6750000111,
+        trackName: "ビデオ通話 ソラ — 友だちとトーク",
+        sellerName: "New Chat Inc.",
+        sellerUrl: "https://soratalk.jp",
+        trackViewUrl: "https://apps.apple.com/jp/app/id6750000111",
+        releaseDate: "2026-08-20T00:00:00Z",
+        genres: ["Social Networking"],
+        description: "Close friends 2-second live video community.",
+        averageUserRating: 4.78,
+        userRatingCount: 1600,
+      }],
+    }), { status: 200 });
+  }
+  if (url.includes("customerreviews") || url.includes("hn.algolia.com") || url.includes("producthunt.com/feed")) {
+    return new Response(url.includes("feed") && !url.includes("customer") ? "<feed></feed>" : JSON.stringify({ feed: { entry: [] }, hits: [] }), { status: 200 });
+  }
+  if (url === "https://soratalk.jp") {
+    return new Response("<html><body><p>Sora close friends video app</p></body></html>", { status: 200 });
+  }
+  if (url === "https://api.deepseek.com/v1/tools/search") {
+    const body = JSON.parse(init.body);
+    searchQueries.push(body.query);
+    if (body.query.includes("ソラ")) {
+      return new Response(JSON.stringify({
+        results: [
+          {
+            url: "https://prtimes.jp/main/html/rd/p/000000001.html",
+            title: "New Chat株式会社、ZVCおよびDGDVよりシードラウンドの資金調達を実施",
+            content: "ビデオ通話 ソラを運営するNew Chat Inc.がZ Venture CapitalとDG Daiwa Venturesからシード出資を受けた。",
+          },
+          {
+            url: "https://foxdata.com/en/app/6750000111",
+            title: "ビデオ通話 ソラ ASO Revenue & Downloads",
+            content: "ビデオ通話 ソラ social app ranking statistics",
+          },
+          {
+            url: "https://applion.jp/iphone/app/6750000111/",
+            title: "ビデオ通話 ソラ レビュー",
+            content: "ビデオ通話 ソラ アプリ情報",
+          },
+        ],
+      }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ results: [] }), { status: 200 });
+  }
+  if (url === "https://api.deepseek.com/chat/completions") {
+    const body = JSON.parse(init.body);
+    if (body.messages[0].content.includes("早期消费级社交产品研究员")) {
+      return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ deals: [] }) } }] }), { status: 200 });
+    }
+    const reply = {
+      admitted: true,
+      origin_type: "indie",
+      localized_name: "晴空视频通话",
+      localized_company: "New Chat 团队",
+      verified_funding: "种子轮 · 金额未公开",
+      verified_investors: "ZVC、DG 大和创投参投",
+      badge_text: "日本社交榜 #1 · 种子轮",
+      platform_label: "苹果端已上架",
+      mech_tags: ["熟人/密友"],
+      hook: "不用开 waitlist 也不用发 photo dump，点开直接跟死党连麦两秒日常",
+      cross_check: {
+        verified_points: ["日本社交榜登顶，新闻通稿证实获 ZVC 与 DG 大和创投种子轮出资"],
+        divergences: ["融资金额未对外公开"],
+      },
+      deep_sections: [
+        { title: "产品形态与切入点", body: "点开就能连麦。" },
+        { title: "目标人群与场景", body: "放学后的高中死党。" },
+        { title: "核心社交机制与关系链", body: "靠 streak 机制防冷场。" },
+        { title: "冷启动与增长飞轮", body: "同班同学互拉。" },
+        { title: "真实口碑、野生玩法与踩过的坑", body: "最近刚做完 Bug Fixes。" },
+        { title: "商业化与可参考讨论点", body: "Pre-Seed 之后专注留存。" },
+      ],
+      translated_refs: [
+        {
+          url: "https://prtimes.jp/main/html/rd/p/000000001.html",
+          source_zh: "日本企业新闻通稿",
+          title_zh: "New Chat 宣布完成由 ZVC 与 DG 大和创投参投的种子轮融资",
+        },
+      ],
+    };
+    return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(reply) } }] }), { status: 200 });
+  }
+  return new Response("Not Found", { status: 404 });
+}
+
+const report = await runSocialRadarPatrol(
+  { MEDIA: r2, DEEPSEEK_API_KEY: "sk-test" },
+  { fetchImpl: mockFetch, nowMs: Date.UTC(2026, 10, 7, 0, 30, 0), regions: ["jp"] }
+);
+const prod = report.admittedNew[0];
+const receipt = formatPatrolReceipt(report, { keyword: "superAgent", siteBaseUrl: "https://vc-radar-cil.pages.dev" });
+console.log(JSON.stringify({ prod, searchQueries, receiptText: receipt.actionCard.text }));
+"""
+    out = _run_node_mjs(script)
+    prod = out["prod"]
+    assert prod["channel"] == "chart"
+    assert prod["has_vc"] is True
+    assert prod["name"] == "晴空视频通话"
+    assert prod["company"] == "New Chat 团队"
+    assert prod["funding"] == "种子轮 · 金额未公开"
+    assert prod["investors"] == "ZVC、DG 大和创投参投"
+    # 验证多语种融资查询词已发出，且 foxdata / applion 垃圾站被彻底过滤
+    assert any("資金調達" in q for q in out["searchQueries"])
+    assert len(prod["ref_links"]) == 1
+    assert prod["ref_links"][0]["source"] == "日本企业新闻通稿"
+    assert "种子轮融资" in prod["ref_links"][0]["title"]
+    # 验证常见外文词条已被自动转为中文
+    assert "候补名单" in prod["hook"] and "日常随手拍" in prod["hook"]
+    assert "waitlist" not in prod["hook"] and "photo dump" not in prod["hook"]
+    assert "连续打卡" in prod["deep"][2]["body"]
+    assert "常规问题修复" in prod["deep"][4]["body"]
+    assert "种子前轮" in prod["deep"][5]["body"]
+    assert "冲榜+早期融资 · 种子轮 · 金额未公开" in out["receiptText"]
+
+
