@@ -1,0 +1,32 @@
+# ============================================================================
+# Social Radar 定时巡检与钉钉回执 Cloudflare Worker 配置
+# ----------------------------------------------------------------------------
+# 密钥一律通过 `wrangler secret put` 注入，绝不写入本文件或代码仓：
+#   - DEEPSEEK_API_KEY       DeepSeek 搜索与拆解模型密钥
+#   - DINGTALK_WEBHOOK_URL   钉钉自定义机器人 Webhook 完整地址
+#   - DINGTALK_SIGN_SECRET   （可选）钉钉自定义机器人 SEC 加签密钥
+#   - CRON_TRIGGER_TOKEN     手动 HTTP 触发接口 Bearer 令牌
+# ============================================================================
+
+name = "vc-radar-cron"
+main = "worker.mjs"
+compatibility_date = "2026-11-01"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = true
+
+[[r2_buckets]]
+binding = "MEDIA"
+bucket_name = "vc-radar-media"
+
+# UTC 00:30 与 12:30 触发 = 北京时间（UTC+8）每天 08:30（早间巡检）与 20:30（晚间巡检）
+[triggers]
+crons = ["30 0,12 * * *"]
+
+[observability]
+enabled = true
+
+[vars]
+SITE_BASE_URL = "https://vc-radar-cil.pages.dev"
+DINGTALK_KEYWORD = "superAgent"
+MAX_ENRICH_PER_RUN = "4"
+SOCIAL_PRODUCT_LIMIT = "36"
