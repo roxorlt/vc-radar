@@ -60,6 +60,10 @@ class Config:
     ])
     homepage_check_file: Path = Path(__file__).resolve().parent.parent / "config/homepage-check.json"
     enable_extended_sources: bool = False
+    r2_bucket: str = "vc-radar-media"
+    r2_public_base: str = "/media"
+    social_product_limit: int = 36
+    social_chart_cutoff_days: int = 540
 
     def __post_init__(self) -> None:
         validate_link_path_template(self.link_path_template)
@@ -134,6 +138,25 @@ def effective_links_file(cfg: Config) -> Path:
     if cfg.test_mode and path.resolve() == Config().links_file.resolve():
         return cfg.db_path.parent / "links.json"
     return path
+
+
+def load_env_var(cfg: Config, name: str) -> str | None:
+    """读取运行所需环境变量或 env_file 键值；测试模式禁止读取本机 env_file，绝不打印返回值。"""
+    if cfg.test_mode:
+        return None
+    v = os.environ.get(name)
+    if v:
+        return v.strip() or None
+    try:
+        for line in cfg.env_file.read_text(encoding="utf-8", errors="ignore").splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            if stripped.startswith(f"{name}="):
+                return stripped.split("=", 1)[1].strip().strip('"').strip("'") or None
+    except OSError:
+        return None
+    return None
 
 
 def load_api_key(cfg: Config) -> str | None:

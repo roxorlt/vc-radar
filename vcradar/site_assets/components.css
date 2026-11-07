@@ -33,7 +33,7 @@ a:hover { color: var(--c-signal-hover); text-decoration: underline; text-underli
 .brand-row:hover { color: var(--c-ink); text-decoration: none; }
 .brand-mark { display: inline-grid; place-items: center; flex: none; width: 26px; height: 26px; border-radius: var(--r-sm); background: var(--c-signal); color: var(--c-on-signal); }
 .brand-mark .icon { width: 15px; height: 15px; }
-.theme-cycle { cursor: pointer; }
+.theme-cycle, .sr-tab, .sr-pill, .sr-card, .sr-close, .sr-shot-btn { cursor: pointer; }
 
 .appbar { position: sticky; top: 0; z-index: 25; display: flex; align-items: center; gap: var(--s-1); height: 52px; padding: 0 var(--s-2) 0 var(--s-4); border-bottom: 1px solid var(--c-divider); background: color-mix(in srgb, var(--c-paper) 88%, transparent); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
 .appbar .brand-row { flex: 1; }

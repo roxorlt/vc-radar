@@ -653,6 +653,114 @@ def _usage(path: Path, now: datetime) -> dict:
     return {"month_used": used, "day_used": day.get("estimated_cost", day.get("cost"))}
 
 
+def _safe_product_url(value: str) -> str:
+    cleaned = _safe_url(value, normalize=True)
+    if not cleaned:
+        return ""
+    if guard.check_no_fictional(cleaned) or guard.check_no_placeholder(cleaned):
+        return ""
+    for _, pattern, exempt_urls in _PUBLISH_RULES:
+        if not exempt_urls and pattern.search(cleaned):
+            return ""
+    return cleaned
+
+
+def _safe_media_url(value: str) -> str:
+    text = str(value or "").strip()
+    if re.fullmatch(r"\.?/media/[a-f0-9]{64}\.(?:jpg|jpeg|png|webp|gif|avif)", text, re.I):
+        return "." + text if text.startswith("/media/") else text
+    return _safe_product_url(text)
+
+
+def _scrub_product_copy(value: str) -> str:
+    from .prompts.social_dossier import sanitize_vernacular
+    text = sanitize_vernacular(str(value or ""))
+    text = re.sub(r"[\w.+%'-]+@[\w-]+(?:\.[\w-]+)+", "", text)
+    text = re.sub(r"(?<![0-9.])(?:\d{1,3}\.){3}\d{1,3}(?![0-9.])", "", text)
+    text = re.sub(r"(?:DEEPSEEK|API_KEY|sk-[a-z0-9]{16,}|\.env|Authorization|Bearer\s+|localhost)", "", text, flags=re.I)
+    return re.sub(r"[ \t]{2,}", " ", text).strip()
+
+
+def _social_products(conn, cfg: Config) -> list[dict]:
+    tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    if "social_product" not in tables:
+        return []
+    limit = max(1, int(getattr(cfg, "social_product_limit", 36) or 36))
+    rows = _rows(
+        conn,
+        f"SELECT * FROM social_product WHERE admitted=1 ORDER BY priority_score DESC, updated_at DESC LIMIT {limit}",
+    )
+    items = []
+    for row in rows:
+        pid = str(row["product_id"] or "").strip()
+        if not re.fullmatch(r"[\w-]+", pid):
+            continue
+        deep_raw = _json(row.get("deep_sections_json"), [])
+        deep_clean = []
+        for sec in deep_raw if isinstance(deep_raw, list) else []:
+            if isinstance(sec, dict) and sec.get("title") and sec.get("body"):
+                deep_clean.append({
+                    "title": _scrub_product_copy(sec["title"]),
+                    "body": _scrub_product_copy(sec["body"]),
+                })
+        if not deep_clean:
+            continue
+        cc_raw = _json(row.get("cross_check_json"), {})
+        cc_clean = {
+            "verified_points": [_scrub_product_copy(x) for x in (cc_raw.get("verified_points") or []) if str(x).strip()][:3],
+            "divergences": [_scrub_product_copy(x) for x in (cc_raw.get("divergences") or []) if str(x).strip()][:2],
+        }
+        shots_clean = []
+        for shot in _json(row.get("screenshots_json"), []):
+            if isinstance(shot, dict):
+                su = _safe_media_url(shot.get("url", ""))
+                if su:
+                    shots_clean.append({"url": su, "label": _scrub_product_copy(shot.get("label") or "产品画面")})
+            elif isinstance(shot, str):
+                su = _safe_media_url(shot)
+                if su:
+                    shots_clean.append({"url": su, "label": "App Store 截图"})
+        refs_clean = []
+        for ref in _json(row.get("ref_links_json"), []):
+            if isinstance(ref, dict):
+                ru = _safe_product_url(ref.get("url", ""))
+                if ru:
+                    refs_clean.append({
+                        "title": _scrub_product_copy(ref.get("title") or "外部报道"),
+                        "source": _scrub_product_copy(ref.get("source") or ""),
+                        "url": ru,
+                    })
+        items.append({
+            "id": pid,
+            "name": _scrub_product_copy(row["name"]) or row["name"],
+            "channel": "vc" if row["channel"] == "vc" else "chart",
+            "live_status": row["live_status"] if row["live_status"] in {"ios", "android", "web", "waitlist"} else "ios",
+            "origin": "bigtech" if row.get("origin_type") == "bigtech" else "indie",
+            "company": _scrub_product_copy(row.get("company_name") or row["name"]),
+            "company_id": row.get("company_id") or None,
+            "app_store_url": _safe_product_url(row.get("app_store_url") or ""),
+            "play_store_url": _safe_product_url(row.get("play_store_url") or ""),
+            "web_url": _safe_product_url(row.get("web_url") or ""),
+            "icon_url": _safe_media_url(row.get("icon_url") or ""),
+            "badge": _scrub_product_copy(row.get("badge_text") or ""),
+            "badge_kind": row.get("badge_kind") if row.get("badge_kind") in {"vc", "hot", "warn"} else "hot",
+            "platform": _scrub_product_copy(row.get("platform_label") or ""),
+            "hook": _scrub_product_copy(row.get("hook") or ""),
+            "mech_tags": [_scrub_product_copy(t) for t in _json(row.get("mech_tags_json"), []) if str(t).strip()][:3],
+            "deep": deep_clean,
+            "cross_check": cc_clean,
+            "screenshots": shots_clean[:6],
+            "ref_links": refs_clean[:6],
+            "funding": _scrub_product_copy(row.get("funding_text") or ""),
+            "investors": _scrub_product_copy(row.get("investors_text") or ""),
+            "release_status": _scrub_product_copy(row.get("release_status_text") or ""),
+            "source_note": _scrub_product_copy(row.get("source_note") or ""),
+            "rating_avg": row.get("rating_avg"),
+            "rating_count": row.get("rating_count"),
+        })
+    return items
+
+
 def _verification(conn, now, cfg=None):
     tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     logs = _rows(conn, "SELECT * FROM verify_log ORDER BY verified_at,id") if "verify_log" in tables else []
@@ -928,6 +1036,7 @@ def _snapshot(conn, cfg: Config, now: datetime) -> dict:
         "events": events, "listing": [e["id"] for e in _sorted_events(events)
                                       if e["id"] in eligible and not e["out_of_scope"] and not e["legacy_country_filtered"]],
         "companies": companies,
+        "products": _social_products(conn, cfg),
         "status": {"sources": fetch, "not_connected": inactive, "pending_ratios": ratios,
                    "fx": fx.status_from_files(cfg, currencies=[e["amount_currency"] for e in _rows(conn, "SELECT amount_currency FROM funding_event WHERE amount_status='暂未换算'")]),
                    "verification": verification,
@@ -1034,6 +1143,7 @@ def _site_payloads(data: dict) -> tuple[dict, dict[str, dict]]:
              "week": {key: data["week"][key] for key in
                       ("date", "cards", "round_pending", "filtered", "event_ids", "yc")},
              "companies": companies, "events": events,
+             "products": data.get("products", []),
              "digests": [{"date": d["date"]} for d in data["digests"]], "wording": wording.SITE_TEXT}
     return index, details
 
@@ -1125,7 +1235,8 @@ def _test_snapshot_path(cfg, moment, slot=None):
     return candidate
 
 
-def build_site(conn: sqlite3.Connection, cfg: Config, *, out_dir=None, now=None, snapshot_slot=None) -> Path:
+def build_site(conn: sqlite3.Connection, cfg: Config, *, out_dir=None, now=None, snapshot_slot=None,
+               include_local_media: bool = False) -> Path:
     """生成完整静态快照并替换站点；失败保留原站点，成功保留上一份到 site.prev。"""
     moment = now or datetime.now(BJ)
     if not isinstance(moment, datetime) or moment.tzinfo is None or moment.utcoffset() is None:
@@ -1162,6 +1273,20 @@ def build_site(conn: sqlite3.Connection, cfg: Config, *, out_dir=None, now=None,
             target = stage / name
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(content)
+        if include_local_media and data.get("products"):
+            media_src = cfg.state_dir / ("test/media" if cfg.test_mode else "media")
+            if media_src.is_dir():
+                referenced = set()
+                for prod in data["products"]:
+                    for candidate_u in [prod.get("icon_url", ""), *(s.get("url", "") for s in prod.get("screenshots", []))]:
+                        if candidate_u.startswith(("./media/", "/media/")):
+                            referenced.add(candidate_u.rsplit("/", 1)[-1])
+                for fname in sorted(referenced):
+                    src_file = media_src / fname
+                    if src_file.is_file():
+                        dst_file = stage / "media" / fname
+                        dst_file.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(src_file, dst_file)
         if dest.exists():
             if previous.exists():
                 os.replace(previous, retired)
