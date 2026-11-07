@@ -47,7 +47,8 @@ UTILITY_NOISE_RE = re.compile(
     r"扫描全能|清理大师|手电筒|万年历|天气预报|计算器|投屏|遥控器|路由器|行车记录仪|监控摄像|"
     r"短剧|看剧|免费小说|壁纸大全|铃声|输入法|网盘|压缩|解压|证件照|去水印|老照片修复|"
     r"マイナンバー|確定申告|乗換案内|ポイントカード|チラシ|クーポン|家計簿|歩数計|防犯|タクシー配車|"
-    r"배달|택시|은행|보험|계산기|날씨|백신|스캐너|단편\s*드라마",
+    r"배달|택시|은행|보험|계산기|날씨|백신|스캐너|단편\s*드라마|"
+    r"^(?:探探|tantan|陌陌|momo|tinder|bumble|badoo|grindr|soul|微信|wechat|微博|weibo|qq|line|kakaotalk)(?:\b|[-－—:：\s])",
     re.I,
 )
 
@@ -252,7 +253,7 @@ def discover_appstore_charts(
         )
         short_name = clean_app_title(raw_name)
         slug = slugify_product(short_name, fallback=f"ios-{app_id}")
-        if slug == f"p-ios{app_id}" or len(slug) < 2:
+        if slug == f"p-ios{app_id}" or len(slug) < 2 or slug in {"app", "ios", "social", "chat", "live"}:
             slug = f"app-{app_id}"
 
         is_bigtech = bool(BIGTECH_SELLERS.search(seller))
@@ -509,6 +510,117 @@ def discover_vc_social_candidates(conn: sqlite3.Connection) -> list[ProductCandi
 
     candidates.sort(key=lambda c: c.priority_score, reverse=True)
     return candidates
+
+
+VC_SOCIAL_SEARCH_QUERIES: tuple[str, ...] = (
+    '"social app" startup raises million seed OR "pre-seed" OR "Series A" 2025 OR 2026 TechCrunch',
+    '"consumer social" startup raises million a16z OR Benchmark OR Founders Fund OR Lightspeed 2025 OR 2026',
+    '"friends" OR "community app" iOS startup raises seed million TechCrunch 2025 OR 2026',
+    '"invite-only" OR "waitlist" social app startup raises seed million 2025 OR 2026',
+    '社交 App 社区 融资 种子轮 OR 天使轮 2025 OR 2026 36氪',
+)
+
+VC_DEAL_EXTRACT_PROMPT = """你是早期消费级社交产品研究员。请从下面多篇公开科技媒体融资报道摘录中，提取所有属于「人与人连接型消费级社交 / 社区 / 好友互动 App 或 Web 产品」的早期融资项目（Pre-Seed / 天使轮 / 种子轮 / A 轮）。
+严格剔除：B2B 企业软件、社媒营销自动化后台、纯单机 AI 陪聊虚拟人、金融交易、医疗与硬件。
+返回严格合法 JSON 对象：
+{
+  "deals": [
+    {
+      "product_name": "具体产品或 App 名称（简短准确）",
+      "company_name": "出品公司名（若与产品同名可填相同名字）",
+      "web_url": "文中提及的产品官网 URL，不确定则填空字符串",
+      "funding_text": "中文轮次与金额，如 '种子轮 · 820 万美元' 或 'Pre-Seed · 2000 万美元'",
+      "investors_text": "中文领投/参投机构，如 'a16z 领投'",
+      "summary": "一句话说明产品核心社交玩法",
+      "source_url": "对应报道原文 URL（必须直接取自输入条目）",
+      "source_title": "对应报道标题"
+    }
+  ]
+}
+最多返回 14 个互不重复的代表性早期社交产品。"""
+
+
+def discover_vc_social_via_search(search_client, llm_client) -> list[ProductCandidate]:
+    """通过搜索服务补充近期公开报道的早期消费级社交融资产品（弥补通用创投 RSS 48 小时窗口内 B2B 占比过高的问题）。"""
+    if search_client is None or llm_client is None:
+        return []
+    snippets: list[str] = []
+    valid_urls: dict[str, dict] = {}
+    for q in VC_SOCIAL_SEARCH_QUERIES:
+        res = search_client.search(q, timeout_s=15.0, count=7, need_content=True)
+        if not res.ok:
+            continue
+        for row in res.results:
+            u = str(row.get("url") or "").strip()
+            if not u.startswith(("http://", "https://")) or u in valid_urls:
+                continue
+            title = str(row.get("title") or "").strip()
+            body = str(row.get("content") or row.get("snippet") or "").strip()
+            if B2B_ENTERPRISE_RE.search(title) or not body:
+                continue
+            valid_urls[u] = {"title": title[:140], "excerpt": body[:1000]}
+            snippets.append(f"[{len(snippets) + 1}] 标题：{title[:140]}\nURL：{u}\n摘录：{body[:700]}")
+            if len(snippets) >= 24:
+                break
+        if len(snippets) >= 24:
+            break
+
+    if not snippets:
+        return []
+
+    ans = llm_client.complete_json(VC_DEAL_EXTRACT_PROMPT, "\n\n".join(snippets), timeout_s=45.0)
+    if not ans.ok:
+        return []
+    try:
+        deals = (json.loads(ans.content) or {}).get("deals") or []
+    except ValueError:
+        return []
+
+    out: list[ProductCandidate] = []
+    seen_slugs: set[str] = set()
+    for item in deals:
+        if not isinstance(item, dict):
+            continue
+        pname = clean_app_title(str(item.get("product_name") or "").strip())
+        src_url = str(item.get("source_url") or "").strip()
+        if not pname or len(pname) < 2 or src_url not in valid_urls:
+            continue
+        slug = slugify_product(pname, fallback="vc")
+        if slug in seen_slugs:
+            continue
+        seen_slugs.add(slug)
+        web = str(item.get("web_url") or "").strip()
+        if not web.startswith(("http://", "https://")):
+            web = ""
+        host = (urlsplit(src_url).hostname or "媒体").removeprefix("www.")
+        meta = valid_urls[src_url]
+        out.append(
+            ProductCandidate(
+                product_id=slug,
+                name=pname,
+                channel="vc",
+                live_status="web" if web else "waitlist",
+                origin_type="indie",
+                company_name=str(item.get("company_name") or pname).strip()[:48],
+                web_url=web,
+                description=str(item.get("summary") or "").strip()[:600],
+                funding_text=fx.format_amount_text(str(item.get("funding_text") or "早期轮次").strip())[:48],
+                investors_text=str(item.get("investors_text") or "早期机构投资").strip()[:60],
+                release_status_text="待探测上线状态",
+                source_note=f"{host} 融资报道",
+                seed_sources=[
+                    {
+                        "source_kind": "vc_article",
+                        "url": src_url,
+                        "source_name": host,
+                        "title": meta["title"],
+                        "excerpt": meta["excerpt"],
+                    }
+                ],
+                priority_score=108.0,
+            )
+        )
+    return out
 
 
 def merge_candidates(
