@@ -230,9 +230,9 @@ class _HTML(HTMLParser):
     def handle_starttag(self, tag, attrs):
         attrs = dict(attrs)
         if tag not in {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "wbr"}:
-            self.stack.append((tag, "entry-content" in attrs.get("class", "").split()))
+            self.stack.append((tag, "entry-content" in (attrs.get("class") or "").split()))
         if tag == "a":
-            self.anchor = {"url": normalize_url(attrs.get("href", ""), self.url), "text": ""}
+            self.anchor = {"url": normalize_url(attrs.get("href") or "", self.url), "text": ""}
         if tag == "script":
             self.script = []
         if tag in {"p", "div", "br", "li", "h1", "h2", "h3", "h4", "h5", "h6"}:

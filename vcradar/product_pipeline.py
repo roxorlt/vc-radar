@@ -34,6 +34,7 @@ from .sources.social_discovery import (
     discover_appstore_charts,
     discover_hn_and_ph_communities,
     discover_vc_social_candidates,
+    discover_vc_social_via_search,
     merge_candidates,
 )
 
@@ -48,6 +49,14 @@ SEO_SCRAPER_HOSTS = (
     "malavida.com",
     "steprimo.com",
     "sensortower.com",
+    "sensortower-china.com",
+    "appstorestatistics.com",
+    "openaso.ai",
+    "apptopia.com",
+    "gamemasha.com",
+    "xianz.ai",
+    "qimai.cn",
+    "chandashi.com",
     "data.ai",
     "similarweb.com",
 )
@@ -711,19 +720,6 @@ def sync_social_products(
     db.ensure_social_schema(conn)
     moment = (now or datetime.now(BJ)).astimezone(BJ)
 
-    if candidates_override is not None:
-        merged = list(candidates_override)
-    else:
-        vc_cands = discover_vc_social_candidates(conn)
-        cutoff = moment.date() - __import__("datetime").timedelta(days=cfg.social_chart_cutoff_days)
-        chart_cands = discover_appstore_charts(cutoff_date=cutoff)
-        comm_cands = discover_hn_and_ph_communities()
-        # 均衡采样：保证早期融资通道（vc）与多国榜单/社区通道（chart）都有充足名额
-        merged_all = merge_candidates(vc_cands, chart_cands, comm_cands)
-        vc_top = [c for c in merged_all if c.channel == "vc"][: max(12, max_candidates // 2)]
-        chart_top = [c for c in merged_all if c.channel != "vc"][: max(16, max_candidates - len(vc_top))]
-        merged = vc_top + chart_top
-
     api_key = None if cfg.test_mode else config.load_api_key(cfg)
     if llm_client is None:
         if not api_key:
@@ -736,12 +732,26 @@ def sync_social_products(
     if media_mirror is None:
         media_mirror = r2.MediaMirror(conn, cfg)
 
+    if candidates_override is not None:
+        merged = list(candidates_override)
+    else:
+        vc_db_cands = discover_vc_social_candidates(conn)
+        vc_search_cands = discover_vc_social_via_search(search_client, llm_client)
+        cutoff = moment.date() - __import__("datetime").timedelta(days=cfg.social_chart_cutoff_days)
+        chart_cands = discover_appstore_charts(cutoff_date=cutoff)
+        comm_cands = discover_hn_and_ph_communities()
+        # 均衡采样：保证早期融资通道（vc）与多国榜单/社区通道（chart）都有充足名额
+        merged_all = merge_candidates(vc_search_cands + vc_db_cands, chart_cands, comm_cands)
+        vc_top = [c for c in merged_all if c.channel == "vc"][: max(14, max_candidates // 2)]
+        chart_top = [c for c in merged_all if c.channel != "vc"][: max(16, max_candidates - len(vc_top))]
+        merged = vc_top + chart_top
+
     existing_enriched = set()
     if not force_refresh:
         existing_enriched = {
             row["product_id"]
             for row in conn.execute(
-                "SELECT product_id FROM social_product WHERE enriched_at IS NOT NULL AND deep_sections_json <> '[]'"
+                "SELECT product_id FROM social_product WHERE enriched_at IS NOT NULL AND (admitted = 0 OR deep_sections_json <> '[]')"
             ).fetchall()
         }
 
@@ -750,19 +760,22 @@ def sync_social_products(
     rejected_count = 0
     failed_count = 0
 
-    # 为避免 SQLite 跨线程冲突，网络 IO 与搜索/模型之后在主线程顺序写库或控制并发度
+    # 为避免 SQLite 跨线程冲突，网络 IO 与搜索/模型之后在主线程顺序写库；单品异常隔离不中断全盘
     for cand in todo:
-        res = enrich_single_candidate(
-            cand,
-            conn=conn,
-            cfg=cfg,
-            search_client=search_client,
-            llm_client=llm_client,
-            media_mirror=media_mirror,
-            robots=None,
-            http_text=http_text,
-            now=moment,
-        )
+        try:
+            res = enrich_single_candidate(
+                cand,
+                conn=conn,
+                cfg=cfg,
+                search_client=search_client,
+                llm_client=llm_client,
+                media_mirror=media_mirror,
+                robots=None,
+                http_text=http_text,
+                now=moment,
+            )
+        except Exception:
+            res = None
         if res is None:
             failed_count += 1
         elif res["admitted"]:

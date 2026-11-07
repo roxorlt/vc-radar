@@ -13,7 +13,7 @@ import zlib
 
 import pytest
 
-from vcradar import db, http, llm, product_pipeline, r2, search, site
+from vcradar import db, deep_fetch, http, llm, product_pipeline, r2, search, site
 from vcradar.config import BJ, Config
 from vcradar.prompts.social_dossier import (
     DOSSIER_SYSTEM_PROMPT,
@@ -113,11 +113,44 @@ def test_r2_sniff_sigv4_and_content_addressed_deduplication(tmp_path):
 
 
 def test_discovery_funnel_charts_vc_and_dedup_merge(tmp_path):
+    from vcradar.sources.social_discovery import discover_vc_social_via_search
+
+    # 回归验证真实网页出现无值布尔属性 <div class><a href> 时 clean_page 不抛 AttributeError
+    cleaned_html, _, _, _ = deep_fetch.clean_page("<html><body><div class><a href>Social Club</a></div></body></html>", "https://club.test")
+    assert "Social Club" in cleaned_html
+
     assert clean_app_title("Setlog: 2-Second Moments") == "Setlog"
     assert clean_app_title("Wabi — Create & Share Mini Apps") == "Wabi"
     assert is_obvious_utility_noise("Super VPN Proxy", "Tools Ltd", "Fast proxy", ["Lifestyle"])
     assert is_obvious_utility_noise("ReelShort - Short Drama", "CrazyMaple", "Watch short drama", ["Entertainment"])
+    assert is_obvious_utility_noise("探探-全球交友高速約會App", "Tantan", "Swipe dating", ["Social Networking"])
     assert not is_obvious_utility_noise("Setlog", "beni inc.", "Share 2-second moments with close friends", ["Social Networking"])
+
+    class _DealTransport(http.Transport):
+        def get(self, url, *, headers=None, timeout=20.0, data=None):
+            return http.HttpResponse(url, 200, "application/json", json.dumps({"results": [
+                {"title": "SuperMe raises $6M seed for taste-based social profiles", "url": "https://techcrunch.com/2026/05/superme-seed", "content": "SuperMe social app raises $6M seed led by First Round."},
+            ]}))
+
+    class _DealLLM(llm.LLMClient):
+        def complete_json(self, sys_p, usr_p, timeout_s=30.0):
+            return llm.LLMResult(ok=True, content=json.dumps({"deals": [{
+                "product_name": "SuperMe",
+                "company_name": "SuperMe Inc.",
+                "web_url": "https://superme.com",
+                "funding_text": "种子轮 · $6M",
+                "investors_text": "First Round 领投",
+                "summary": "Taste-based social profile network",
+                "source_url": "https://techcrunch.com/2026/05/superme-seed",
+                "source_title": "SuperMe raises $6M seed",
+            }]}))
+
+    vc_from_search = discover_vc_social_via_search(
+        search.SearchClient(_DealTransport(), api_key="sk-test"),
+        _DealLLM(),
+    )
+    assert len(vc_from_search) == 1 and vc_from_search[0].name == "SuperMe"
+    assert "600 万美元" in vc_from_search[0].funding_text
 
     def fake_chart_http(url: str):
         if "/jp/rss/topfreeapplications/" in url and "genre=6005" in url:
