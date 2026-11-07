@@ -113,6 +113,78 @@ CREATE UNIQUE INDEX IF NOT EXISTS calendar_identity ON calendar(date, country, t
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 """
 
+SOCIAL_SCHEMA_SQL: str = """
+CREATE TABLE IF NOT EXISTS social_product (
+    product_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    channel TEXT NOT NULL,
+    live_status TEXT NOT NULL DEFAULT 'ios',
+    origin_type TEXT NOT NULL DEFAULT 'indie',
+    company_id TEXT,
+    company_name TEXT NOT NULL DEFAULT '',
+    app_store_id TEXT,
+    app_store_url TEXT NOT NULL DEFAULT '',
+    play_store_url TEXT NOT NULL DEFAULT '',
+    web_url TEXT NOT NULL DEFAULT '',
+    icon_url TEXT NOT NULL DEFAULT '',
+    badge_text TEXT NOT NULL DEFAULT '',
+    badge_kind TEXT NOT NULL DEFAULT '',
+    platform_label TEXT NOT NULL DEFAULT '',
+    hook TEXT NOT NULL DEFAULT '',
+    mech_tags_json TEXT NOT NULL DEFAULT '[]',
+    deep_sections_json TEXT NOT NULL DEFAULT '[]',
+    cross_check_json TEXT NOT NULL DEFAULT '{}',
+    screenshots_json TEXT NOT NULL DEFAULT '[]',
+    ref_links_json TEXT NOT NULL DEFAULT '[]',
+    funding_text TEXT NOT NULL DEFAULT '',
+    investors_text TEXT NOT NULL DEFAULT '',
+    release_status_text TEXT NOT NULL DEFAULT '',
+    source_note TEXT NOT NULL DEFAULT '',
+    chart_best_rank INTEGER,
+    chart_regions_json TEXT NOT NULL DEFAULT '[]',
+    rating_avg REAL,
+    rating_count INTEGER,
+    first_release_date TEXT,
+    priority_score REAL NOT NULL DEFAULT 0,
+    admitted INTEGER NOT NULL DEFAULT 0,
+    reject_reason TEXT NOT NULL DEFAULT '',
+    enriched_at TEXT,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS social_product_admitted ON social_product(admitted, channel, priority_score DESC);
+CREATE INDEX IF NOT EXISTS social_product_app_id ON social_product(app_store_id) WHERE app_store_id IS NOT NULL;
+CREATE TABLE IF NOT EXISTS product_evidence (
+    id INTEGER PRIMARY KEY,
+    product_id TEXT NOT NULL REFERENCES social_product(product_id) ON DELETE CASCADE,
+    source_kind TEXT NOT NULL,
+    url TEXT NOT NULL,
+    source_name TEXT NOT NULL DEFAULT '',
+    title TEXT NOT NULL DEFAULT '',
+    excerpt TEXT NOT NULL DEFAULT '',
+    media_urls_json TEXT NOT NULL DEFAULT '[]',
+    fetched_at TEXT NOT NULL,
+    UNIQUE(product_id, source_kind, url)
+);
+CREATE INDEX IF NOT EXISTS product_evidence_pid ON product_evidence(product_id, id);
+CREATE TABLE IF NOT EXISTS media_asset (
+    src_url TEXT PRIMARY KEY,
+    sha256 TEXT NOT NULL,
+    r2_key TEXT NOT NULL,
+    public_path TEXT NOT NULL,
+    content_type TEXT NOT NULL,
+    byte_size INTEGER NOT NULL,
+    uploaded_r2 INTEGER NOT NULL DEFAULT 0,
+    uploaded_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS media_asset_sha ON media_asset(sha256);
+"""
+
+
+def ensure_social_schema(conn: sqlite3.Connection) -> None:
+    """幂等创建社交产品发现、证据与 R2 媒体索引表。"""
+    with conn:
+        conn.executescript(SOCIAL_SCHEMA_SQL)
+
 
 def connect(path: Path) -> sqlite3.Connection:
     """打开（不存在就建）库，PRAGMA journal_mode=WAL、foreign_keys=ON，row_factory=sqlite3.Row，建表。"""

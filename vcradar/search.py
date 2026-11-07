@@ -103,7 +103,7 @@ class SearchClient:
         result.results = relevant_results(name, result.results)
         return result
 
-    def search(self, query: str, timeout_s: float = 15.0) -> SearchResult:
+    def search(self, query: str, timeout_s: float = 15.0, *, count: int = 5, need_content: bool = False) -> SearchResult:
         """发送合法的 1～128 字符查询，只有非空 results 才计费。"""
         if not isinstance(query, str) or not query.strip() or not 1 <= len(query) <= 128:
             return SearchResult(False, error="invalid_query")
@@ -120,7 +120,10 @@ class SearchClient:
             response = self.transport.get(
                 ENDPOINT, headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"},
                 timeout=min(15.0, timeout_s),
-                data=json.dumps({"query": query, "count": 5, "need_content": False}, ensure_ascii=False).encode("utf-8"),
+                data=json.dumps(
+                    {"query": query, "count": max(1, min(int(count), 10)), "need_content": bool(need_content)},
+                    ensure_ascii=False,
+                ).encode("utf-8"),
             )
             elapsed = max(time.monotonic() - started, response.elapsed_s)
             if response.status != 200 or response.error or elapsed > min(15.0, timeout_s):

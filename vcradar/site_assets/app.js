@@ -398,10 +398,166 @@ function createDetailLoader(data, fetcher = url => fetch(url)) {
   };
 }
 
-if (typeof module !== "undefined") module.exports = {selectEvents, filtersForRoute, defaultFilters, activeFilterCount, external, linkedText, weekHtml, listHtml, detailHtml, ycHtml, createDetailLoader, splitSummary, formatDate, sourceLabels, samePage};
+const MECH_OPTIONS = ["全部类型", "熟人/密友", "陌生人/破冰", "兴趣/品味社区", "多人共创", "校园/破冰", "AI辅助连接"];
+function defaultRadarState() {
+  return {view:"all", mech:"全部类型", vcLiveOnly:true, chartIndieOnly:true, activeId:"", zoomUrl:""};
+}
+function safeMediaSrc(url) {
+  const val = String(url || "").trim();
+  if (/^\.?\/media\/[a-f0-9]{64}\.(?:jpg|jpeg|png|webp|gif|avif)$/i.test(val)) return val.startsWith("/") ? `.${val}` : val;
+  try {
+    const parsed = new URL(val);
+    return ["http:", "https:"].includes(parsed.protocol) && !parsed.username && !parsed.password ? val : "";
+  } catch (_) { return ""; }
+}
+function selectProducts(data, state = defaultRadarState()) {
+  const list = Array.isArray(data?.products) ? data.products : [];
+  return list.filter(p => {
+    if (state.view === "all" && p.live_status === "waitlist") return false;
+    if (state.view === "vc") {
+      if (p.channel !== "vc") return false;
+      if (state.vcLiveOnly && p.live_status === "waitlist") return false;
+    }
+    if (state.view === "chart") {
+      if (p.channel !== "chart") return false;
+      if (state.chartIndieOnly && p.origin === "bigtech") return false;
+    }
+    if (state.mech && state.mech !== "全部类型" && !(p.mech_tags || []).includes(state.mech)) return false;
+    return true;
+  });
+}
+function productIconHtml(p) {
+  const src = safeMediaSrc(p.icon_url);
+  if (src) return `<img class="sr-icon" src="${esc(src)}" alt="${esc(p.name)}" loading="lazy">`;
+  const ch = [...String(p.name || "?").trim()][0] || "?";
+  return `<span class="sr-icon-fallback" aria-hidden="true">${esc(ch)}</span>`;
+}
+function productCardHtml(p) {
+  const isWait = p.live_status === "waitlist";
+  const shots = (p.screenshots || []).map(s => ({url:safeMediaSrc(s.url), label:s.label || ""})).filter(s => s.url).slice(0, 3);
+  const footText = p.channel === "vc" ? `${p.funding || "早期轮次"} · ${p.investors || ""}` : `${p.source_note || "榜单新品"}`;
+  const refCount = (p.ref_links || []).length;
+  return `<article class="sr-card" tabindex="0" role="button" data-open-product="${esc(p.id)}" aria-label="${esc(p.name)}">
+    <div class="sr-card-top">${productIconHtml(p)}<div class="sr-head-meta">
+      <div class="sr-title-row"><h2 class="sr-name">${esc(p.name)}</h2>${p.badge ? `<span class="sr-badge ${esc(p.badge_kind || "hot")}">${esc(p.badge)}</span>` : ""}</div>
+      <div class="sr-subline"><span>${esc(p.company)}</span><span>·</span><span class="${isWait ? "sr-dot-wait" : "sr-dot-live"}" aria-hidden="true"></span><span>${esc(p.platform || p.release_status)}</span></div>
+    </div></div>
+    <p class="sr-hook">${esc(p.hook)}</p>
+    ${shots.length ? `<div class="sr-media-strip">${shots.map(s => `<div class="sr-thumb-wrap"><img src="${esc(s.url)}" alt="${esc(p.name)}" loading="lazy">${s.label && s.label !== "App Store 截图" ? `<span class="sr-thumb-tag">${esc(s.label)}</span>` : ""}</div>`).join("")}</div>` : ""}
+    <div class="sr-tag-row">${(p.mech_tags || []).map(t => `<span class="sr-mtag">${esc(t)}</span>`).join("")}${refCount ? `<span class="sr-mtag">多方评测 ${refCount} 篇</span>` : ""}</div>
+    <div class="sr-card-foot"><span class="sr-foot-l"><strong>${esc(p.channel === "vc" ? "融资关联" : "发现渠道")}</strong>：${esc(footText)}</span><span class="sr-foot-r">深度拆解${icon("right")}</span></div>
+  </article>`;
+}
+function radarHtml(data, state = defaultRadarState()) {
+  const allProducts = Array.isArray(data?.products) ? data.products : [];
+  const allPlayableCount = allProducts.filter(p => p.live_status !== "waitlist").length;
+  const vcAll = allProducts.filter(p => p.channel === "vc");
+  const vcLiveCount = vcAll.filter(p => p.live_status !== "waitlist").length;
+  const chartAll = allProducts.filter(p => p.channel === "chart");
+  const chartIndieCount = chartAll.filter(p => p.origin !== "bigtech").length;
+  const visible = selectProducts(data, state);
+  let ctxPills = "";
+  if (state.view === "vc") {
+    ctxPills = `<div class="sr-pill-group" role="group" aria-label="上线状态"><button type="button" class="sr-pill is-ctx${state.vcLiveOnly ? " is-active" : ""}" data-sr-vclive="1">仅看已上线 (${vcLiveCount})</button><button type="button" class="sr-pill is-ctx${!state.vcLiveOnly ? " is-active" : ""}" data-sr-vclive="0">含内测 / 未开放 (${vcAll.length})</button></div>`;
+  } else if (state.view === "chart") {
+    ctxPills = `<div class="sr-pill-group" role="group" aria-label="团队背景"><button type="button" class="sr-pill is-ctx${state.chartIndieOnly ? " is-active" : ""}" data-sr-indie="1">独立新锐 (${chartIndieCount})</button><button type="button" class="sr-pill is-ctx${!state.chartIndieOnly ? " is-active" : ""}" data-sr-indie="0">大厂独立新包 (${chartAll.length})</button></div>`;
+  }
+  return `<header class="sr-bar"><a class="sr-brand" href="#radar" data-sr-home><span class="brand-mark">${icon("radar")}</span><span>Social Radar</span></a><div class="sr-actions"><div class="sr-tabs" role="tablist" aria-label="产品视图"><button type="button" role="tab" aria-selected="${state.view === "all"}" class="sr-tab${state.view === "all" ? " is-active" : ""}" data-sr-view="all">全部<span class="sr-cnt">${allPlayableCount}</span></button><button type="button" role="tab" aria-selected="${state.view === "vc"}" class="sr-tab${state.view === "vc" ? " is-active" : ""}" data-sr-view="vc">早期融资<span class="sr-cnt">${vcAll.length}</span></button><button type="button" role="tab" aria-selected="${state.view === "chart"}" class="sr-tab${state.view === "chart" ? " is-active" : ""}" data-sr-view="chart">冲榜新品<span class="sr-cnt">${chartAll.length}</span></button></div><button class="theme-cycle" type="button" data-theme-cycle aria-label="切换深浅色">${icon("sun")}</button></div></header>
+  <section class="sr-filters" aria-label="类型筛选"><div class="sr-pill-group">${MECH_OPTIONS.map(m => `<button type="button" class="sr-pill${state.mech === m ? " is-active" : ""}" data-sr-mech="${esc(m)}">${esc(m)}</button>`).join("")}</div>${ctxPills}</section>
+  ${visible.length ? `<div class="sr-grid">${visible.map(productCardHtml).join("")}</div>` : empty("当前筛选条件下暂无匹配产品")}`;
+}
+function productModalHtml(p, zoomUrl = "") {
+  if (!p) return "";
+  const primaryLink = p.app_store_url || p.play_store_url || p.web_url;
+  const primaryLabel = p.app_store_url ? "App Store" : p.play_store_url ? "Google Play" : "访问官网";
+  const shots = (p.screenshots || []).map(s => ({url:safeMediaSrc(s.url), label:s.label || "产品画面"})).filter(s => s.url);
+  const cc = p.cross_check || {};
+  const verified = Array.isArray(cc.verified_points) ? cc.verified_points : [];
+  const divergences = Array.isArray(cc.divergences) ? cc.divergences : [];
+  const hasCc = verified.length || divergences.length;
+  return `<div class="sr-backdrop is-open" id="sr-backdrop" role="dialog" aria-modal="true" aria-label="${esc(p.name)}"><div class="sr-modal" id="sr-modal">
+    <div class="sr-modal-head"><div class="sr-modal-id">${productIconHtml(p)}<div><h2 class="sr-modal-title">${esc(p.name)}</h2><div class="sr-subline"><span>${esc(p.company)}</span><span>·</span><span>${esc(p.platform || p.release_status)}</span></div></div></div><div class="sr-modal-act">${primaryLink ? external(primaryLink, primaryLabel, "btn primary", true) : ""}<button type="button" class="sr-close" data-sr-close aria-label="关闭详情">${icon("close")}</button></div></div>
+    <div class="sr-modal-body" id="sr-detail-scroll">
+      <dl class="sr-meta-grid"><div class="sr-meta-item"><dt>出品团队</dt><dd>${esc(p.company)}</dd></div><div class="sr-meta-item"><dt>融资与阶段</dt><dd>${esc(p.funding || "未公开披露")}</dd></div><div class="sr-meta-item"><dt>投资方 / 背景</dt><dd>${esc(p.investors || "独立团队")}</dd></div><div class="sr-meta-item"><dt>榜单与发现</dt><dd>${esc(p.source_note || p.release_status)}</dd></div></dl>
+      ${shots.length ? `<div class="sr-gallery">${shots.map(s => `<button type="button" class="sr-shot-btn" data-sr-zoom="${esc(s.url)}" aria-label="放大查看 ${esc(s.label)}"><img src="${esc(s.url)}" alt="${esc(s.label)}"><span class="sr-shot-cap"><span>${esc(s.label)}</span>${icon("zoom")}</span></button>`).join("")}</div>` : ""}
+      ${hasCc ? `<section class="sr-crosscheck"><div class="sr-cc-title">${icon("info")}<span>多方交叉比对（商店数据 · 热门评测帖 · 真实用户评价）</span></div><div class="sr-cc-list">${verified.map(v => `<div class="sr-cc-row ok">${icon("ok")}<span>${esc(v)}</span></div>`).join("")}${divergences.map(d => `<div class="sr-cc-row warn">${icon("warn")}<span>${esc(d)}</span></div>`).join("")}</div></section>` : ""}
+      <div class="sr-dossier">${(p.deep || []).map((sec, idx) => `<section class="sr-dsec"><h3><span class="sr-no">${String(idx + 1).padStart(2, "0")}</span><span>${esc(sec.title)}</span></h3><p>${esc(sec.body)}</p></section>`).join("")}</div>
+      ${(p.ref_links || []).length ? `<section class="sr-refs"><h3>热门帖子与外部报道出处</h3><div class="sr-ref-list">${p.ref_links.map(r => external(r.url, (r.source ? `${r.source}：` : "") + r.title, "sr-ref-link", true)).join("")}</div></section>` : ""}
+    </div>
+  </div></div>${zoomUrl ? `<div class="sr-lightbox is-open" id="sr-lightbox" data-sr-unzoom><button type="button" class="sr-close sr-lb-close" data-sr-unzoom aria-label="关闭大图">${icon("close")}</button><img src="${esc(zoomUrl)}" alt="放大预览"></div>` : ""}`;
+}
+
+if (typeof module !== "undefined") module.exports = {selectEvents, filtersForRoute, defaultFilters, activeFilterCount, external, linkedText, weekHtml, listHtml, detailHtml, ycHtml, createDetailLoader, splitSummary, formatDate, sourceLabels, samePage, selectProducts, radarHtml, productModalHtml, defaultRadarState};
 if (typeof document !== "undefined") {
   let data, loadDetail, renderVersion = 0, lastHash, drawerOpen = false, detailObserver;
+  let radarScrollLocked = false, radarSavedScrollY = 0;
   const filters = defaultFilters();
+  const radarState = defaultRadarState();
+  function isRadarHash(rawHash) {
+    const hasProducts = Array.isArray(data?.products) && data.products.length > 0;
+    if (!rawHash || rawHash === "#") return hasProducts;
+    return rawHash === "#radar" || rawHash.startsWith("#radar/") || rawHash.startsWith("#p/");
+  }
+  function lockRadarScroll() {
+    if (radarScrollLocked || !document.body) return;
+    radarSavedScrollY = typeof window !== "undefined" && typeof window.scrollY === "number" ? window.scrollY : 0;
+    const docEl = document.documentElement;
+    const sbw = typeof window !== "undefined" && docEl ? Math.max(0, (window.innerWidth || 0) - (docEl.clientWidth || 0)) : 0;
+    radarScrollLocked = true;
+    if (sbw > 0) document.body.style.paddingRight = `${sbw}px`;
+    document.body.style.position = "fixed";
+    document.body.style.top = `-${radarSavedScrollY}px`;
+    document.body.style.left = "0";
+    document.body.style.right = "0";
+    document.body.style.width = "100%";
+    document.body.style.overflow = "hidden";
+  }
+  function unlockRadarScroll() {
+    if (!radarScrollLocked || !document.body) return;
+    radarScrollLocked = false;
+    document.body.style.position = "";
+    document.body.style.top = "";
+    document.body.style.left = "";
+    document.body.style.right = "";
+    document.body.style.width = "";
+    document.body.style.overflow = "";
+    document.body.style.paddingRight = "";
+    if (document.documentElement?.style) document.documentElement.style.scrollBehavior = "auto";
+    if (typeof window !== "undefined" && typeof window.scrollTo === "function") window.scrollTo(0, radarSavedScrollY);
+    if (document.documentElement?.style) document.documentElement.style.scrollBehavior = "";
+  }
+  function renderRadarOverlay() {
+    const overlay = document.getElementById("sr-overlay");
+    if (!overlay) return;
+    const prod = radarState.activeId ? (data?.products || []).find(p => p.id === radarState.activeId) : null;
+    if (!prod) {
+      overlay.innerHTML = "";
+      unlockRadarScroll();
+      return;
+    }
+    lockRadarScroll();
+    overlay.innerHTML = productModalHtml(prod, radarState.zoomUrl);
+    const scroller = document.getElementById("sr-detail-scroll");
+    if (scroller && !radarState.zoomUrl) scroller.scrollTop = 0;
+  }
+  function openRadarProduct(pid) {
+    const prod = (data?.products || []).find(p => p.id === pid);
+    if (!prod) return;
+    radarState.activeId = pid;
+    radarState.zoomUrl = "";
+    renderRadarOverlay();
+    document.querySelector("[data-sr-close]")?.focus?.({preventScroll:true});
+  }
+  function closeRadarProduct() {
+    const prevId = radarState.activeId;
+    radarState.activeId = "";
+    radarState.zoomUrl = "";
+    renderRadarOverlay();
+    if (typeof location !== "undefined" && String(location.hash || "").startsWith("#p/")) {
+      if (typeof history !== "undefined" && typeof history.replaceState === "function") history.replaceState(null, "", "#radar");
+    }
+    if (prevId) document.querySelector(`[data-open-product="${prevId}"]`)?.focus?.({preventScroll:true});
+  }
   function setTheme(value) {
     const root = document.documentElement;
     if (!root) return;
@@ -436,7 +592,23 @@ if (typeof document !== "undefined") {
   async function render() {
     if (!data) return;
     const version = ++renderVersion;
-    const hash = location.hash || "#week", isDetail = hash.startsWith("#c/");
+    const rawHash = location.hash || "";
+    if (isRadarHash(rawHash)) {
+      document.documentElement?.setAttribute("data-mode", "radar");
+      if (rawHash === "#radar/vc") radarState.view = "vc";
+      else if (rawHash === "#radar/chart") radarState.view = "chart";
+      else if (rawHash === "#radar") radarState.view = "all";
+      if (rawHash.startsWith("#p/")) {
+        try { radarState.activeId = decodeURIComponent(rawHash.slice(3)); } catch (_) { radarState.activeId = ""; }
+      }
+      document.title = `Social Radar · ${W.product}`;
+      document.getElementById("main").innerHTML = radarHtml(data, radarState);
+      renderRadarOverlay();
+      return;
+    }
+    if (radarState.activeId) { radarState.activeId = ""; radarState.zoomUrl = ""; renderRadarOverlay(); }
+    document.documentElement?.removeAttribute("data-mode");
+    const hash = rawHash || "#week", isDetail = hash.startsWith("#c/");
     filtersForRoute(hash, lastHash, filters);
     lastHash = hash;
     let id;
@@ -483,6 +655,22 @@ if (typeof document !== "undefined") {
     if (route === "list" && drawerOpen) setDrawer(true);
   }
   document.addEventListener("click", e => {
+    if (e.target.closest("[data-sr-unzoom]")) { e.preventDefault(); radarState.zoomUrl = ""; renderRadarOverlay(); return; }
+    const zoomBtn = e.target.closest("[data-sr-zoom]");
+    if (zoomBtn) { e.preventDefault(); radarState.zoomUrl = zoomBtn.dataset.srZoom || ""; renderRadarOverlay(); return; }
+    if (e.target.closest("[data-sr-close]")) { e.preventDefault(); closeRadarProduct(); return; }
+    if (e.target.id === "sr-backdrop") { e.preventDefault(); closeRadarProduct(); return; }
+    const viewBtn = e.target.closest("[data-sr-view]");
+    if (viewBtn) { radarState.view = viewBtn.dataset.srView; radarState.mech = "全部类型"; render(); return; }
+    const mechBtn = e.target.closest("[data-sr-mech]");
+    if (mechBtn) { radarState.mech = mechBtn.dataset.srMech; render(); return; }
+    const vcBtn = e.target.closest("[data-sr-vclive]");
+    if (vcBtn) { radarState.vcLiveOnly = vcBtn.dataset.srVclive === "1"; render(); return; }
+    const indBtn = e.target.closest("[data-sr-indie]");
+    if (indBtn) { radarState.chartIndieOnly = indBtn.dataset.srIndie === "1"; render(); return; }
+    if (e.target.closest("[data-sr-home]")) { e.preventDefault(); radarState.view = "all"; radarState.mech = "全部类型"; render(); return; }
+    const prodCard = e.target.closest("[data-open-product]");
+    if (prodCard && !e.target.closest("a[href]")) { e.preventDefault(); openRadarProduct(prodCard.dataset.openProduct); return; }
     if (e.target.closest("[data-skip-main]")) { e.preventDefault(); document.getElementById("main").focus(); return; }
     const sectionLink = e.target.closest("[data-detail-section]");
     if (sectionLink) {
@@ -506,10 +694,21 @@ if (typeof document !== "undefined") {
       render().then(() => { if (drawerOpen) setDrawer(true, {key:button.dataset.filter, value:button.dataset.value}); });
     }
   });
+  document.addEventListener("wheel", e => {
+    if (!radarScrollLocked) return;
+    if (radarState.zoomUrl || !e.target?.closest?.("#sr-detail-scroll")) e.preventDefault();
+  }, {passive:false});
+  document.addEventListener("touchmove", e => {
+    if (!radarScrollLocked) return;
+    if (radarState.zoomUrl || !e.target?.closest?.("#sr-detail-scroll")) e.preventDefault();
+  }, {passive:false});
   document.addEventListener("change", e => {
     if (e.target.id === "issue" && e.target.value) { filters.period = e.target.value; render(); }
   });
   document.addEventListener("keydown", e => {
+    if (radarState.zoomUrl && e.key === "Escape") { e.preventDefault(); radarState.zoomUrl = ""; renderRadarOverlay(); return; }
+    if (radarState.activeId && e.key === "Escape") { e.preventDefault(); closeRadarProduct(); return; }
+    if (e.key === "Enter" && document.activeElement?.dataset?.openProduct) { e.preventDefault(); openRadarProduct(document.activeElement.dataset.openProduct); return; }
     if (drawerOpen) {
       if (e.key === "Escape") { e.preventDefault(); setDrawer(false, {}); return; }
       if (e.key === "Tab") {
@@ -525,7 +724,8 @@ if (typeof document !== "undefined") {
     if (tagName === "INPUT" || tagName === "SELECT" || tagName === "TEXTAREA") return;
     if (e.key === "t") { e.preventDefault(); cycleTheme(); return; }
     if (e.key === "j" || e.key === "k") {
-      const links = [...document.querySelectorAll(".co-card .co-link")];
+      const selector = document.documentElement?.getAttribute("data-mode") === "radar" ? ".sr-card" : ".co-card .co-link";
+      const links = [...document.querySelectorAll(selector)];
       if (!links.length) return;
       e.preventDefault();
       const idx = links.indexOf(document.activeElement);
@@ -535,7 +735,7 @@ if (typeof document !== "undefined") {
     }
   });
   window.addEventListener("resize", () => { if (drawerOpen && matchMedia("(min-width: 1024px)").matches) setDrawer(false); });
-  window.addEventListener("hashchange", () => { render(); window.scrollTo(0, 0); });
+  window.addEventListener("hashchange", () => { const prevLocked = radarScrollLocked; render(); if (!prevLocked && !radarScrollLocked) window.scrollTo(0, 0); });
   fetch("./data.json").then(r => { if (!r.ok) throw new Error(); return r.json(); }).then(value => {
     data = value; useWording(data); loadDetail = createDetailLoader(data); render();
   }).catch(() => {

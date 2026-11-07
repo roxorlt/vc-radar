@@ -83,6 +83,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--links-file", type=Path)
     parser.add_argument("--assume-review-site-passed", action="store_true")
     parser.add_argument("--extended-sources", action="store_true", help="同时抓取已接入的扩展公开信源")
+    parser.add_argument("--sync-products", action="store_true", help="运行社交产品多源发现、热帖检索交叉比对与 R2 媒体入库")
+    parser.add_argument("--max-products", type=int, default=32, help="单次最多富化的候选产品数")
+    parser.add_argument("--force-products", action="store_true", help="强制重新富化已入库的产品")
+    parser.add_argument("--copy-media", action="store_true", help="生成静态站点时同步拷贝本机缓存媒体目录")
     args = parser.parse_args(argv)
     if args.fixture is not None and args.fixture.name == "manifest.json":
         args.fixture = args.fixture.parent
@@ -160,6 +164,26 @@ def main(argv: list[str] | None = None) -> int:
             parts = urlsplit(cfg.base_url)
             if parts.scheme not in {"http", "https"} or not parts.hostname:
                 raise ValueError("review_site_passed=true 时需要有效的 base_url")
+        if args.sync_products:
+            from datetime import datetime
+            from . import db
+            from .config import BJ
+            from .product_pipeline import sync_social_products
+            moment = datetime.now(BJ)
+            conn = db.connect(cfg.db_path)
+            try:
+                summary = sync_social_products(
+                    conn,
+                    cfg,
+                    max_candidates=max(1, args.max_products),
+                    force_refresh=bool(args.force_products),
+                    now=moment,
+                )
+            finally:
+                conn.close()
+            print(f"社交产品入库完成：新增准入 {summary['admitted_new']} 款，累计准入 {summary['total_admitted']} 款")
+            if not args.build_site:
+                return 0
         if args.build_site:
             from datetime import datetime
             from .config import BJ
@@ -169,7 +193,7 @@ def main(argv: list[str] | None = None) -> int:
             conn = sqlite3.connect(cfg.db_path.resolve().as_uri() + "?mode=ro", uri=True)
             conn.row_factory = sqlite3.Row
             try:
-                build_site(conn, cfg, now=moment)
+                build_site(conn, cfg, now=moment, include_local_media=bool(args.copy_media))
             finally:
                 conn.close()
             print("回看页已生成")
