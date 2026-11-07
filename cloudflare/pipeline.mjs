@@ -592,7 +592,7 @@ async function fetchJson(net, url, timeoutMs = 12_000) {
   }
 }
 
-async function fetchText(net, url, timeoutMs = 10_000) {
+async function fetchText(net, url, timeoutMs = 10_000, maxChars = 350_000) {
   const res = await net.request(
     url,
     {
@@ -608,10 +608,210 @@ async function fetchText(net, url, timeoutMs = 10_000) {
   }
   try {
     const text = await res.text();
-    return { status: res.status, body: text.slice(0, 350_000), finalUrl: res.url || url };
+    return { status: res.status, body: text.slice(0, maxChars), finalUrl: res.url || url };
   } catch {
     return { status: res.status, body: "", finalUrl: res.url || url };
   }
+}
+
+export function parseCompactCount(raw) {
+  if (typeof raw === "number" && Number.isFinite(raw)) return Math.trunc(raw);
+  const cleaned = String(raw ?? "")
+    .replace(/[,，\s]+/g, "")
+    .trim();
+  if (!cleaned) return null;
+  const m = cleaned.match(/^(\d+(?:\.\d+)?)([kKmM万億亿])?$/);
+  if (!m) return null;
+  const num = Number(m[1]);
+  if (!Number.isFinite(num)) return null;
+  const unit = (m[2] || "").toLowerCase();
+  const mult =
+    unit === "k" ? 1_000 : unit === "m" ? 1_000_000 : unit === "万" ? 10_000 : unit === "亿" || unit === "億" ? 100_000_000 : 1;
+  return Math.round(num * mult);
+}
+
+function resolveArtworkTemplate(template, width = 512, height = 512) {
+  const raw = String(template || "").trim();
+  if (!raw.startsWith("http")) return "";
+  return raw.replace(/\{w\}x\{h\}(?:\{c\}|bb)\.\{f\}/i, `${width}x${height}bb.jpg`);
+}
+
+function extractSerializedServerData(htmlBody) {
+  const m = String(htmlBody || "").match(/<script[^>]*\bid=["']serialized-server-data["'][^>]*>([\s\S]*?)<\/script>/i);
+  if (!m || !m[1]) return null;
+  try {
+    return JSON.parse(m[1]);
+  } catch {
+    return null;
+  }
+}
+
+function collectStorefrontLockups(node, out = [], seen = new Set(), depth = 0) {
+  if (!node || typeof node !== "object" || depth > 20) return out;
+  if (Array.isArray(node)) {
+    for (const item of node) collectStorefrontLockups(item, out, seen, depth + 1);
+    return out;
+  }
+  const adamId = String(node.adamId || "").trim();
+  const title = String(node.title || "").trim();
+  if (
+    /^\d{8,12}$/.test(adamId) &&
+    title &&
+    !seen.has(adamId) &&
+    (node.ordinal != null || node.icon?.template || node.developerName || node.subtitle)
+  ) {
+    seen.add(adamId);
+    out.push(node);
+  }
+  for (const val of Object.values(node)) {
+    if (val && typeof val === "object") collectStorefrontLockups(val, out, seen, depth + 1);
+  }
+  return out;
+}
+
+async function fetchStorefrontChart(net, region, genreId, genreLabel) {
+  const url = `https://apps.apple.com/${region}/iphone/charts/${genreId}?chart=top-free`;
+  const page = await fetchText(net, url, 14_000, 1_300_000);
+  if (page.status !== 200 || !page.body) return [];
+  const ssd = extractSerializedServerData(page.body);
+  if (!ssd) return [];
+  const lockups = collectStorefrontLockups(ssd);
+  const rows = [];
+  lockups.forEach((lockup, idx) => {
+    const appId = String(lockup.adamId || "").trim();
+    // Apple 商店数字 ID 单调递增：>= 6480000000 对应 2024.05 之后创建的新应用，直接过滤十年老国民应用
+    if (!/^\d+$/.test(appId) || Number(appId) < 6_480_000_000) return;
+    const rankNum = Number(lockup.ordinal);
+    const rank = Number.isFinite(rankNum) && rankNum > 0 ? rankNum : idx + 1;
+    const icon512 = resolveArtworkTemplate(lockup.icon?.template, 512, 512);
+    const ratingAvg = typeof lockup.rating === "number" ? Math.round(lockup.rating * 100) / 100 : undefined;
+    const ratingCount = parseCompactCount(lockup.ratingCount);
+    rows.push({
+      appId,
+      region: region.toUpperCase(),
+      genreId,
+      genre: genreLabel,
+      rank,
+      rssMeta: {
+        trackName: String(lockup.title || "").trim(),
+        sellerName: String(lockup.developerName || lockup.artistName || "").trim(),
+        releaseDate: "",
+        fromStorefront: true,
+        description: String(lockup.subtitle || "").trim(),
+        genres: [genreLabel, genreId === "6005" ? "Social Networking" : ""].filter(Boolean),
+        artworkUrl512: icon512,
+        trackViewUrl: `https://apps.apple.com/${region}/app/id${appId}`,
+        averageUserRating: ratingAvg,
+        userRatingCount: ratingCount ?? undefined,
+      },
+    });
+  });
+  return rows;
+}
+
+export function extractAppStorePageBundle(htmlBody, country = "us") {
+  const html = String(htmlBody || "");
+  let description = "";
+  let datePublished = "";
+  let ratingAvg = null;
+  let ratingCount = null;
+  let iconUrl = "";
+
+  for (const m of html.matchAll(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)) {
+    try {
+      const ld = JSON.parse(m[1]);
+      if (ld?.["@type"] === "SoftwareApplication") {
+        if (typeof ld.description === "string" && ld.description.length > description.length) {
+          description = decodeHtmlEntities(ld.description).trim();
+        }
+        if (typeof ld.datePublished === "string" && /^\d{4}-\d{2}-\d{2}/.test(ld.datePublished)) {
+          datePublished = ld.datePublished.slice(0, 10);
+        }
+        const rv = Number(ld.aggregateRating?.ratingValue);
+        const rc = parseCompactCount(ld.aggregateRating?.reviewCount ?? ld.aggregateRating?.ratingCount);
+        if (Number.isFinite(rv) && rv > 0) ratingAvg = Math.round(rv * 100) / 100;
+        if (rc != null) ratingCount = rc;
+        if (typeof ld.image === "string" && ld.image.startsWith("http")) iconUrl = ld.image;
+      }
+    } catch {}
+  }
+
+  const screenshots = [];
+  const seenShotBases = new Set();
+  const posReviews = [];
+  const negReviews = [];
+  const seenRevTitles = new Set();
+
+  const ssd = extractSerializedServerData(html);
+  if (ssd) {
+    const walk = (node, depth = 0) => {
+      if (!node || typeof node !== "object" || depth > 20) return;
+      if (Array.isArray(node)) {
+        for (const item of node) walk(item, depth + 1);
+        return;
+      }
+      if (typeof node.description === "string" && node.description.length > description.length) {
+        description = node.description.trim();
+      }
+      if (
+        typeof node.template === "string" &&
+        typeof node.width === "number" &&
+        typeof node.height === "number" &&
+        node.width >= 500 &&
+        node.height > node.width * 1.35 &&
+        !/AppIcon/i.test(node.template) &&
+        screenshots.length < 5
+      ) {
+        const baseKey = node.template.split("/{w}")[0];
+        if (!seenShotBases.has(baseKey)) {
+          seenShotBases.add(baseKey);
+          const h = Math.round((node.height / node.width) * 600);
+          const resolved = resolveArtworkTemplate(node.template, 600, h);
+          if (resolved) screenshots.push(resolved);
+        }
+      }
+      if (typeof node.contents === "string" && typeof node.rating === "number" && node.title) {
+        const title = String(node.title).trim();
+        const content = String(node.contents).trim();
+        if (content && !seenRevTitles.has(title)) {
+          seenRevTitles.add(title);
+          const row = {
+            country: String(country || "us").toUpperCase(),
+            stars: Math.trunc(node.rating),
+            title: title.slice(0, 80),
+            content: content.slice(0, 240),
+          };
+          if (row.stars >= 4 && posReviews.length < 4) posReviews.push(row);
+          else if (row.stars <= 2 && negReviews.length < 4) negReviews.push(row);
+        }
+      }
+      for (const val of Object.values(node)) {
+        if (val && typeof val === "object") walk(val, depth + 1);
+      }
+    };
+    walk(ssd);
+  }
+
+  if (!screenshots.length) {
+    for (const m of html.matchAll(/https:\/\/is[0-9]-ssl\.mzstatic\.com\/image\/thumb\/[^\s"',>){}]+\.(?:jpg|png|webp)/gi)) {
+      const u = m[0];
+      if (/Icon|Placeholder\.mill\/\d+x\d+bb|1200x630wa/i.test(u)) continue;
+      if (!screenshots.includes(u)) {
+        screenshots.push(u);
+        if (screenshots.length >= 5) break;
+      }
+    }
+  }
+
+  return {
+    description,
+    datePublished,
+    ratingAvg,
+    ratingCount,
+    iconUrl,
+    screenshots,
+    reviews: [...posReviews, ...negReviews].slice(0, 8),
+  };
 }
 
 async function deepseekSearch(net, apiKey, query, { count = 6, needContent = true } = {}) {
@@ -733,39 +933,51 @@ async function discoverAppStoreCharts(net, { cutoffDays = 540, nowMs = Date.now(
 
   const appearances = new Map();
   const rssEntries = new Map();
+  let itunesBlocked = false;
   for (let i = 0; i < tasks.length; i += 6) {
     const batch = tasks.slice(i, i + 6);
+    let batchItunesOk = 0;
     const settled = await Promise.all(
       batch.map(async ({ region, genreId, genreLabel }) => {
-        const url = `https://itunes.apple.com/${region}/rss/topfreeapplications/limit=60/genre=${genreId}/json`;
-        const payload = await fetchJson(net, url, 12_000);
-        let entries = payload?.feed?.entry || [];
-        if (entries && !Array.isArray(entries)) entries = [entries];
-        return entries.map((entry, idx) => {
-          const appId = String(entry?.id?.attributes?.["im:id"] || "").trim();
-          const images = Array.isArray(entry?.["im:image"]) ? entry["im:image"] : [];
-          const rawIcon = String(images.at(-1)?.label || "").trim();
-          const icon512 = rawIcon ? rawIcon.replace(/\/\d+x\d+bb\./, "/512x512bb.") : "";
-          const catTerm = String(entry?.category?.attributes?.term || entry?.category?.attributes?.label || genreLabel).trim();
-          return {
-            appId,
-            region: region.toUpperCase(),
-            genreId,
-            genre: genreLabel,
-            rank: idx + 1,
-            rssMeta: {
-              trackName: String(entry?.["im:name"]?.label || entry?.title?.label || "").trim(),
-              sellerName: String(entry?.["im:artist"]?.label || "").trim(),
-              releaseDate: String(entry?.["im:releaseDate"]?.label || "").trim(),
-              description: String(entry?.summary?.label || "").trim(),
-              genres: [catTerm, genreLabel].filter(Boolean),
-              artworkUrl512: icon512,
-              trackViewUrl: String(entry?.id?.label || "").split("?")[0],
-            },
-          };
-        });
+        if (!itunesBlocked) {
+          const url = `https://itunes.apple.com/${region}/rss/topfreeapplications/limit=60/genre=${genreId}/json`;
+          const payload = await fetchJson(net, url, 12_000);
+          if (payload && typeof payload === "object") {
+            batchItunesOk += 1;
+            let entries = payload?.feed?.entry || [];
+            if (entries && !Array.isArray(entries)) entries = [entries];
+            return entries.map((entry, idx) => {
+              const appId = String(entry?.id?.attributes?.["im:id"] || "").trim();
+              const images = Array.isArray(entry?.["im:image"]) ? entry["im:image"] : [];
+              const rawIcon = String(images.at(-1)?.label || "").trim();
+              const icon512 = rawIcon ? rawIcon.replace(/\/\d+x\d+bb\./, "/512x512bb.") : "";
+              const catTerm = String(entry?.category?.attributes?.term || entry?.category?.attributes?.label || genreLabel).trim();
+              return {
+                appId,
+                region: region.toUpperCase(),
+                genreId,
+                genre: genreLabel,
+                rank: idx + 1,
+                rssMeta: {
+                  trackName: String(entry?.["im:name"]?.label || entry?.title?.label || "").trim(),
+                  sellerName: String(entry?.["im:artist"]?.label || "").trim(),
+                  releaseDate: String(entry?.["im:releaseDate"]?.label || "").trim(),
+                  description: String(entry?.summary?.label || "").trim(),
+                  genres: [catTerm, genreLabel].filter(Boolean),
+                  artworkUrl512: icon512,
+                  trackViewUrl: String(entry?.id?.label || "").split("?")[0],
+                },
+              };
+            });
+          }
+        }
+        // 当 Cloudflare Worker 出口被 legacy itunes.apple.com 拦截时，自动切换至 apps.apple.com 现代榜单页 JSON
+        return fetchStorefrontChart(net, region, genreId, genreLabel);
       })
     );
+    if (!itunesBlocked && batch.length > 0 && batchItunesOk === 0) {
+      itunesBlocked = true;
+    }
     for (const rows of settled) {
       for (const row of rows) {
         if (!/^\d+$/.test(row.appId)) continue;
@@ -785,7 +997,7 @@ async function discoverAppStoreCharts(net, { cutoffDays = 540, nowMs = Date.now(
     }
   }
 
-  // 先基于 RSS 自带元数据筛出近 540 天且非工具噪音的候选（即使后续批量 lookup 被限流也不丢任何榜单新品）
+  // 先基于 RSS/Storefront 自带元数据筛出近期且非工具噪音的候选（即使后续批量 lookup 被限流也不丢任何榜单新品）
   const prefilteredIdsByCountry = new Map();
   for (const [appId, ranks] of appearances.entries()) {
     const best = [...ranks].sort((a, b) => (a.genreId === "6005" ? 0 : 1) - (b.genreId === "6005" ? 0 : 1) || a.rank - b.rank)[0];
@@ -803,16 +1015,23 @@ async function discoverAppStoreCharts(net, { cutoffDays = 540, nowMs = Date.now(
   }
 
   const lookupMeta = new Map();
-  for (const [country, ids] of prefilteredIdsByCountry.entries()) {
-    for (let idx = 0; idx < ids.length; idx += 50) {
-      const slice = ids.slice(idx, idx + 50);
-      const url = `https://itunes.apple.com/lookup?id=${slice.join(",")}&country=${country}`;
-      const payload = await fetchJson(net, url, 12_000);
-      const results = Array.isArray(payload?.results) ? payload.results : [];
-      for (const item of results) {
-        const tid = String(item?.trackId || "").trim();
-        if (tid) lookupMeta.set(tid, { country, meta: item });
+  if (!itunesBlocked) {
+    for (const [country, ids] of prefilteredIdsByCountry.entries()) {
+      for (let idx = 0; idx < ids.length; idx += 50) {
+        const slice = ids.slice(idx, idx + 50);
+        const url = `https://itunes.apple.com/lookup?id=${slice.join(",")}&country=${country}`;
+        const payload = await fetchJson(net, url, 12_000);
+        const results = Array.isArray(payload?.results) ? payload.results : [];
+        for (const item of results) {
+          const tid = String(item?.trackId || "").trim();
+          if (tid) lookupMeta.set(tid, { country, meta: item });
+        }
       }
+    }
+  }
+  for (const [appId, entry] of rssEntries.entries()) {
+    if (!lookupMeta.has(appId) && typeof entry?.meta?.averageUserRating === "number") {
+      lookupMeta.set(appId, entry);
     }
   }
 
@@ -824,7 +1043,12 @@ async function discoverAppStoreCharts(net, { cutoffDays = 540, nowMs = Date.now(
     const country = lkEntry?.country || rssEntry?.country || "us";
     const meta = { ...(rssEntry?.meta || {}), ...(lkEntry?.meta || {}) };
     const relRaw = String(meta.releaseDate || "").slice(0, 10);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(relRaw) || relRaw < cutoffIso) continue;
+    const hasValidRel = /^\d{4}-\d{2}-\d{2}$/.test(relRaw);
+    if (hasValidRel) {
+      if (relRaw < cutoffIso) continue;
+    } else if (!(meta.fromStorefront && Number(appId) >= 6_480_000_000)) {
+      continue;
+    }
 
     const rawName = String(meta.trackName || "").trim();
     const seller = String(meta.sellerName || meta.artistName || "").trim();
@@ -870,6 +1094,7 @@ async function discoverAppStoreCharts(net, { cutoffDays = 540, nowMs = Date.now(
     const rankScore = Math.max(0, 100 - bestRank);
     const ratingBonus = Math.min(15, Math.pow(ratingCount || 0, 0.35));
     const score = rankScore + genreBonus + multiRegionBonus + ratingBonus;
+    const releaseLabel = hasValidRel ? `iOS 已上架（${relRaw.slice(0, 7)} 首发）` : "iOS 已上架（近期冲榜新品）";
 
     candidates.push({
       product_id: slug,
@@ -888,13 +1113,13 @@ async function discoverAppStoreCharts(net, { cutoffDays = 540, nowMs = Date.now(
       release_notes: String(meta.releaseNotes || "").slice(0, 800),
       funding_text: isBigtech ? `${seller} 旗下新包` : "未公开披露融资",
       investors_text: isBigtech ? seller : "自然冲榜新品",
-      release_status_text: `iOS 已上架（${relRaw.slice(0, 7)} 首发）`,
+      release_status_text: releaseLabel,
       source_note: regionSummary || "App Store 免费榜新品",
       chart_best_rank: bestRank,
       chart_regions: dedupRegions.slice(0, 4),
       rating_avg: ratingAvg,
       rating_count: ratingCount,
-      first_release_date: relRaw,
+      first_release_date: hasValidRel ? relRaw : null,
       primary_country: country,
       seed_sources: [
         {
@@ -902,7 +1127,7 @@ async function discoverAppStoreCharts(net, { cutoffDays = 540, nowMs = Date.now(
           url: storeUrl,
           source_name: `App Store (${country.toUpperCase()})`,
           title: rawName,
-          excerpt: `${regionSummary}\n开发者：${seller}\n首发日期：${relRaw}\n简介：${desc.slice(0, 1000)}`,
+          excerpt: `${regionSummary}\n开发者：${seller}\n首发日期：${hasValidRel ? relRaw : "近期冲榜新品"}\n简介：${desc.slice(0, 1000)}`,
         },
       ],
       priority_score: score,
@@ -1276,31 +1501,48 @@ async function enrichCandidate(cand, { net, apiKey, model = "deepseek-flash", me
     cand.release_status_text = "Web 可直接访问";
   }
 
-  // 若 App Store Lookup 未返回截图但已有商店页面 URL，则从商店 SSR 页面提取官方高清截图
-  if (cand.app_store_id && !cand.raw_screenshots?.length) {
+  // 若 App Store Lookup 未返回完整简介/截图，则从 apps.apple.com SSR 详情页一次性提取完整简介、高清竖屏截图与内嵌真实评论
+  let storePageReviews = [];
+  if (cand.app_store_id && (!cand.raw_screenshots?.length || String(cand.description || "").length < 120)) {
     const pageUrl = cand.app_store_url || `https://apps.apple.com/${cand.primary_country || "us"}/app/id${cand.app_store_id}`;
-    const storePage = await fetchText(net, pageUrl, 10_000);
+    const storePage = await fetchText(net, pageUrl, 12_000, 1_100_000);
     if (storePage.status === 200 && storePage.body) {
-      const shotMatches = storePage.body.matchAll(
-        /https:\/\/is[0-9]-ssl\.mzstatic\.com\/image\/thumb\/[^\s"',>)]+\.(?:jpg|png|webp)/gi
-      );
-      const extracted = [];
-      for (const m of shotMatches) {
-        const u = m[0];
-        if (/Icon|Placeholder\.mill\/\d+x\d+bb|1200x630wa/i.test(u)) continue;
-        if (!extracted.includes(u)) {
-          extracted.push(u);
-          if (extracted.length >= 5) break;
-        }
+      const bundle = extractAppStorePageBundle(storePage.body, cand.primary_country || "us");
+      if (bundle.description && bundle.description.length > String(cand.description || "").length) {
+        cand.description = bundle.description.slice(0, 2400);
       }
-      if (extracted.length) cand.raw_screenshots = extracted;
+      if (!cand.raw_screenshots?.length && bundle.screenshots.length) {
+        cand.raw_screenshots = bundle.screenshots;
+      }
+      if (!cand.icon_url && bundle.iconUrl) {
+        cand.icon_url = bundle.iconUrl;
+      }
+      if (!cand.first_release_date && bundle.datePublished) {
+        cand.first_release_date = bundle.datePublished;
+        cand.release_status_text = `iOS 已上架（${bundle.datePublished.slice(0, 7)} 首发）`;
+      }
+      if (cand.rating_avg == null && bundle.ratingAvg != null) {
+        cand.rating_avg = bundle.ratingAvg;
+        if (bundle.ratingCount != null) cand.rating_count = bundle.ratingCount;
+      }
+      if (bundle.reviews.length) {
+        storePageReviews = bundle.reviews;
+      }
     }
   }
 
-  // 3. 拉取 Apple 官方真实用户好评与差评
-  let reviews = [];
-  if (cand.app_store_id) {
-    reviews = await fetchAppStoreReviews(net, cand.app_store_id, [cand.primary_country || "us", "us", "jp"]);
+  // 3. 拉取 Apple 官方真实用户好评与差评（优先复用详情页已内嵌的真实评论，不足时再拉 RSS）
+  let reviews = [...storePageReviews];
+  if (cand.app_store_id && reviews.length < 4) {
+    const rssReviews = await fetchAppStoreReviews(net, cand.app_store_id, [cand.primary_country || "us", "us", "jp"]);
+    const seenTitles = new Set(reviews.map((r) => r.title));
+    for (const r of rssReviews) {
+      if (!seenTitles.has(r.title)) {
+        seenTitles.add(r.title);
+        reviews.push(r);
+      }
+    }
+    reviews = reviews.slice(0, 10);
   }
 
   // 4. 调用 DeepSeek Search 搜索热门评测帖与专访

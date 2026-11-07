@@ -31,7 +31,8 @@ def _make_png_bytes(width: int = 320, height: int = 240, rgb: tuple[int, int, in
 
 def _run_node_mjs(script_body: str, env_extra: dict[str, str] | None = None) -> dict:
     proc = subprocess.run(
-        ["node", "--input-type=module", "-e", script_body],
+        ["node", "--input-type=module", "-"],
+        input=script_body,
         cwd=str(REPO_ROOT),
         capture_output=True,
         text=True,
@@ -468,3 +469,161 @@ console.log(JSON.stringify({{
     assert out["lastRunAdmittedCount"] == 0
     assert out["noTokenStatus"] == 503
     assert out["badTokenStatus"] == 403
+
+
+def test_storefront_chart_and_app_page_fallback_when_itunes_blocked():
+    """验证当 Cloudflare Worker 被 itunes.apple.com 403 拦截时，自动降级至 apps.apple.com 现代榜单页与详情页 JSON。"""
+    png_hex = _make_png_bytes().hex()
+    shot_png_hex = _make_png_bytes(rgb=(220, 80, 60)).hex()
+    script = f"""
+import {{ runSocialRadarPatrol, parseCompactCount }} from "./cloudflare/pipeline.mjs";
+
+const pngBytes = Buffer.from("{png_hex}", "hex");
+const shotPngBytes = Buffer.from("{shot_png_hex}", "hex");
+const store = new Map();
+const r2 = {{
+  async head(key) {{ return store.has(key) ? {{ key }} : null; }},
+  async get(key) {{
+    if (!store.has(key)) return null;
+    const bytes = store.get(key);
+    return {{ body: bytes, async text() {{ return new TextDecoder().decode(bytes); }} }};
+  }},
+  async put(key, val) {{
+    store.set(key, typeof val === "string" ? new TextEncoder().encode(val) : new Uint8Array(val));
+  }},
+}};
+
+const chartHtml = `<html><head><script type="application/json" id="serialized-server-data">${{JSON.stringify({{
+  data: [{{
+    shelves: [{{
+      items: [
+        {{
+          adamId: "310633997",
+          ordinal: "1",
+          title: "WhatsApp Messenger",
+          subtitle: "Simple. Reliable. Private.",
+          developerName: "WhatsApp Inc.",
+          rating: 4.7,
+          ratingCount: "14M",
+        }},
+        {{
+          adamId: "6756442328",
+          ordinal: "3",
+          title: "BlinkClub — Besties Camera",
+          subtitle: "Share 2-second moments with friends",
+          developerName: "BlinkClub Studio",
+          rating: 4.82,
+          ratingCount: "12.5K",
+          icon: {{ template: "https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/icon/{{w}}x{{h}}{{c}}.{{f}}" }},
+        }},
+      ],
+    }}],
+  }}],
+}})}}</script></head><body></body></html>`;
+
+const appPageHtml = `<html><head>
+<script type="application/ld+json">${{JSON.stringify({{
+  "@type": "SoftwareApplication",
+  description: "BlinkClub lets up to 6 college roommates swap unfiltered front-back live snaps right on the lockscreen.",
+  datePublished: "2026-06-18",
+}})}}</script>
+<script type="application/json" id="serialized-server-data">${{JSON.stringify({{
+  media: [
+    {{
+      width: 1320,
+      height: 2868,
+      template: "https://is1-ssl.mzstatic.com/image/thumb/PurpleSource221/v4/shot1/{{w}}x{{h}}{{c}}.{{f}}",
+    }},
+  ],
+  reviews: [
+    {{ rating: 5, title: "Best dorm widget", contents: "My roommates and I send 10 snaps a day." }},
+    {{ rating: 2, title: "Battery drain", contents: "Widget refresh uses a bit too much battery." }},
+  ],
+}})}}</script>
+</head><body></body></html>`;
+
+let seenUserPrompt = "";
+async function mockFetch(rawUrl, init = {{}}) {{
+  const url = String(rawUrl);
+  if (url.includes("itunes.apple.com")) {{
+    return new Response("Forbidden", {{ status: 403 }});
+  }}
+  if (url === "https://apps.apple.com/us/iphone/charts/6005?chart=top-free") {{
+    return new Response(chartHtml, {{ status: 200, headers: {{ "content-type": "text/html" }} }});
+  }}
+  if (url.includes("apps.apple.com/") && url.includes("/iphone/charts/")) {{
+    return new Response('<html><script type="application/json" id="serialized-server-data">{{}}</script></html>', {{
+      status: 200,
+      headers: {{ "content-type": "text/html" }},
+    }});
+  }}
+  if (url === "https://apps.apple.com/us/app/id6756442328") {{
+    return new Response(appPageHtml, {{ status: 200, headers: {{ "content-type": "text/html" }} }});
+  }}
+  if (url.includes("mzstatic.com/image/thumb/")) {{
+    return new Response(url.includes("/shot1/") ? shotPngBytes : pngBytes, {{ status: 200, headers: {{ "content-type": "image/png" }} }});
+  }}
+  if (url.includes("hn.algolia.com") || url.includes("producthunt.com/feed")) {{
+    return new Response(url.includes("algolia") ? JSON.stringify({{ hits: [] }}) : "<feed></feed>", {{ status: 200 }});
+  }}
+  if (url === "https://api.deepseek.com/v1/tools/search") {{
+    return new Response(JSON.stringify({{ results: [] }}), {{ status: 200 }});
+  }}
+  if (url === "https://api.deepseek.com/chat/completions") {{
+    const body = JSON.parse(init.body);
+    if (body.messages[0].content.includes("早期消费级社交产品研究员")) {{
+      return new Response(JSON.stringify({{ choices: [{{ message: {{ content: JSON.stringify({{ deals: [] }}) }} }}] }}), {{ status: 200 }});
+    }}
+    seenUserPrompt = body.messages[1].content;
+    return new Response(JSON.stringify({{
+      choices: [{{
+        message: {{
+          content: JSON.stringify({{
+            admitted: true,
+            origin_type: "indie",
+            badge_text: "北美社交榜 #3 · 宿舍锁屏",
+            platform_label: "iOS 已上架",
+            mech_tags: ["熟人/密友"],
+            hook: "最多绑 6 个室友互甩前后双摄锁屏快照",
+            cross_check: {{ verified_points: ["北美社交榜 #3"], divergences: ["部分评价反馈小组件略费电"] }},
+            deep_sections: [
+              {{ title: "产品形态与切入点", body: "锁屏直接看室友快照。" }},
+              {{ title: "目标人群与场景", body: "大学宿舍好友。" }},
+              {{ title: "核心社交机制与关系链", body: "6 人上限密友圈。" }},
+              {{ title: "冷启动与增长飞轮", body: "室友互拉装机。" }},
+              {{ title: "真实口碑、野生玩法与踩过的坑", body: "好玩但略费电。" }},
+              {{ title: "商业化与可参考讨论点", body: "免费攒关系链。" }},
+            ],
+          }}),
+        }},
+      }}],
+    }}), {{ status: 200 }});
+  }}
+  return new Response("Not Found", {{ status: 404 }});
+}}
+
+const report = await runSocialRadarPatrol(
+  {{ MEDIA: r2, DEEPSEEK_API_KEY: "sk-test" }},
+  {{ fetchImpl: mockFetch, nowMs: Date.UTC(2026, 10, 7, 0, 30, 0), regions: ["us"] }}
+);
+console.log(JSON.stringify({{
+  chartCount: report.sourceCounts.chart,
+  admittedNames: report.admittedNew.map(p => p.name),
+  blink: report.admittedNew[0],
+  hasFullDescInPrompt: seenUserPrompt.includes("6 college roommates"),
+  hasReviewInPrompt: seenUserPrompt.includes("Battery drain"),
+  compactCounts: [parseCompactCount("25K"), parseCompactCount("1.2万"), parseCompactCount("3,400")],
+}}));
+"""
+    out = _run_node_mjs(script)
+    assert out["chartCount"] == 1  # WhatsApp (adamId 310633997) 被过滤，仅保留近期新品 BlinkClub
+    assert out["admittedNames"] == ["BlinkClub"]
+    assert out["blink"]["rating_avg"] == 4.82
+    assert out["blink"]["rating_count"] == 12500
+    assert out["blink"]["release_status"] == "iOS 已上架（2026-06 首发）"
+    assert len(out["blink"]["screenshots"]) == 1
+    assert out["blink"]["icon_url"].startswith("/media/")
+    assert out["hasFullDescInPrompt"] is True
+    assert out["hasReviewInPrompt"] is True
+    assert out["compactCounts"] == [25000, 12000, 3400]
+
