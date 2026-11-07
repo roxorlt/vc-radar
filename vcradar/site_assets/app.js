@@ -410,12 +410,34 @@ function safeMediaSrc(url) {
     return ["http:", "https:"].includes(parsed.protocol) && !parsed.username && !parsed.password ? val : "";
   } catch (_) { return ""; }
 }
+function isVcProduct(p) {
+  return Boolean(p && (p.channel === "vc" || p.has_vc));
+}
+function zhPlatformText(raw) {
+  return String(raw || "")
+    .replace(/iOS\s*\/\s*Android\s*已上架/gi, "苹果 / 安卓已上架")
+    .replace(/iOS\s*已上架/gi, "苹果端已上架")
+    .replace(/Android\s*网页版/gi, "安卓网页版")
+    .replace(/Android\s*已上架/gi, "安卓端已上架")
+    .replace(/Web\s*可直接玩/gi, "网页版可直接玩")
+    .replace(/Web\s*可直接访问/gi, "网页版可直接访问")
+    .replace(/Web\s*已上线/gi, "网页版已上线")
+    .replace(/App\s*Store\s*免费榜新品/gi, "苹果商店免费榜新品")
+    .replace(/Hacker\s*News\s*Show\s*HN/gi, "极客社区首发")
+    .replace(/Show\s*HN\s*社区首发/gi, "极客社区首发")
+    .replace(/Product\s*Hunt\s*每日新品/gi, "新品社区榜单")
+    .replace(/Product\s*Hunt\s*首发/gi, "新品社区首发")
+    .replace(/TechCrunch\s*融资报道/gi, "海外创投融资报道")
+    .replace(/TechCrunch\s*报道/gi, "海外创投报道")
+    .replace(/TechCrunch\s*配图/gi, "创投报道配图")
+    .replace(/PR\s*TIMES\s*配图/gi, "日媒通稿配图");
+}
 function selectProducts(data, state = defaultRadarState()) {
   const list = Array.isArray(data?.products) ? data.products : [];
   return list.filter(p => {
     if (state.view === "all" && p.live_status === "waitlist") return false;
     if (state.view === "vc") {
-      if (p.channel !== "vc") return false;
+      if (!isVcProduct(p)) return false;
       if (state.vcLiveOnly && p.live_status === "waitlist") return false;
     }
     if (state.view === "chart") {
@@ -434,24 +456,27 @@ function productIconHtml(p) {
 }
 function productCardHtml(p) {
   const isWait = p.live_status === "waitlist";
+  const hasVc = isVcProduct(p);
   const shots = (p.screenshots || []).map(s => ({url:safeMediaSrc(s.url), label:s.label || ""})).filter(s => s.url).slice(0, 3);
-  const footText = p.channel === "vc" ? `${p.funding || "早期轮次"} · ${p.investors || ""}` : `${p.source_note || "榜单新品"}`;
+  const footText = p.channel === "vc"
+    ? `${p.funding || "早期轮次"} · ${p.investors || ""}`
+    : (hasVc ? `${p.funding} · ${p.investors || ""}${p.source_note ? `（${p.source_note}）` : ""}` : `${p.source_note || "榜单新品"}`);
   const refCount = (p.ref_links || []).length;
   return `<article class="sr-card" tabindex="0" role="button" data-open-product="${esc(p.id)}" aria-label="${esc(p.name)}">
     <div class="sr-card-top">${productIconHtml(p)}<div class="sr-head-meta">
       <div class="sr-title-row"><h2 class="sr-name">${esc(p.name)}</h2>${p.badge ? `<span class="sr-badge ${esc(p.badge_kind || "hot")}">${esc(p.badge)}</span>` : ""}</div>
-      <div class="sr-subline"><span>${esc(p.company)}</span><span>·</span><span class="${isWait ? "sr-dot-wait" : "sr-dot-live"}" aria-hidden="true"></span><span>${esc(p.platform || p.release_status)}</span></div>
+      <div class="sr-subline"><span>${esc(p.company)}</span><span>·</span><span class="${isWait ? "sr-dot-wait" : "sr-dot-live"}" aria-hidden="true"></span><span>${esc(zhPlatformText(p.platform || p.release_status))}</span></div>
     </div></div>
     <p class="sr-hook">${esc(p.hook)}</p>
-    ${shots.length ? `<div class="sr-media-strip">${shots.map(s => `<div class="sr-thumb-wrap"><img src="${esc(s.url)}" alt="${esc(p.name)}" loading="lazy">${s.label && s.label !== "App Store 截图" ? `<span class="sr-thumb-tag">${esc(s.label)}</span>` : ""}</div>`).join("")}</div>` : ""}
+    ${shots.length ? `<div class="sr-media-strip">${shots.map(s => `<div class="sr-thumb-wrap"><img src="${esc(s.url)}" alt="${esc(p.name)}" loading="lazy">${s.label && s.label !== "App Store 截图" ? `<span class="sr-thumb-tag">${esc(zhPlatformText(s.label))}</span>` : ""}</div>`).join("")}</div>` : ""}
     <div class="sr-tag-row">${(p.mech_tags || []).map(t => `<span class="sr-mtag">${esc(t)}</span>`).join("")}${refCount ? `<span class="sr-mtag">多方评测 ${refCount} 篇</span>` : ""}</div>
-    <div class="sr-card-foot"><span class="sr-foot-l"><strong>${esc(p.channel === "vc" ? "融资关联" : "发现渠道")}</strong>：${esc(footText)}</span><span class="sr-foot-r">深度拆解${icon("right")}</span></div>
+    <div class="sr-card-foot"><span class="sr-foot-l"><strong>${esc(hasVc ? "融资关联" : "发现渠道")}</strong>：${esc(footText)}</span><span class="sr-foot-r">深度拆解${icon("right")}</span></div>
   </article>`;
 }
 function radarHtml(data, state = defaultRadarState()) {
   const allProducts = Array.isArray(data?.products) ? data.products : [];
   const allPlayableCount = allProducts.filter(p => p.live_status !== "waitlist").length;
-  const vcAll = allProducts.filter(p => p.channel === "vc");
+  const vcAll = allProducts.filter(isVcProduct);
   const vcLiveCount = vcAll.filter(p => p.live_status !== "waitlist").length;
   const chartAll = allProducts.filter(p => p.channel === "chart");
   const chartIndieCount = chartAll.filter(p => p.origin !== "bigtech").length;
@@ -462,23 +487,23 @@ function radarHtml(data, state = defaultRadarState()) {
   } else if (state.view === "chart") {
     ctxPills = `<div class="sr-pill-group" role="group" aria-label="团队背景"><button type="button" class="sr-pill is-ctx${state.chartIndieOnly ? " is-active" : ""}" data-sr-indie="1">独立新锐 (${chartIndieCount})</button><button type="button" class="sr-pill is-ctx${!state.chartIndieOnly ? " is-active" : ""}" data-sr-indie="0">大厂独立新包 (${chartAll.length})</button></div>`;
   }
-  return `<header class="sr-bar"><a class="sr-brand" href="#radar" data-sr-home><span class="brand-mark">${icon("radar")}</span><span>Social Radar</span></a><div class="sr-actions"><div class="sr-tabs" role="tablist" aria-label="产品视图"><button type="button" role="tab" aria-selected="${state.view === "all"}" class="sr-tab${state.view === "all" ? " is-active" : ""}" data-sr-view="all">全部<span class="sr-cnt">${allPlayableCount}</span></button><button type="button" role="tab" aria-selected="${state.view === "vc"}" class="sr-tab${state.view === "vc" ? " is-active" : ""}" data-sr-view="vc">早期融资<span class="sr-cnt">${vcAll.length}</span></button><button type="button" role="tab" aria-selected="${state.view === "chart"}" class="sr-tab${state.view === "chart" ? " is-active" : ""}" data-sr-view="chart">冲榜新品<span class="sr-cnt">${chartAll.length}</span></button></div><button class="theme-cycle" type="button" data-theme-cycle aria-label="切换深浅色">${icon("sun")}</button></div></header>
+  return `<header class="sr-bar"><a class="sr-brand" href="#radar" data-sr-home><span class="brand-mark">${icon("radar")}</span><span>社交产品雷达</span></a><div class="sr-actions"><div class="sr-tabs" role="tablist" aria-label="产品视图"><button type="button" role="tab" aria-selected="${state.view === "all"}" class="sr-tab${state.view === "all" ? " is-active" : ""}" data-sr-view="all">全部<span class="sr-cnt">${allPlayableCount}</span></button><button type="button" role="tab" aria-selected="${state.view === "vc"}" class="sr-tab${state.view === "vc" ? " is-active" : ""}" data-sr-view="vc">早期融资<span class="sr-cnt">${vcAll.length}</span></button><button type="button" role="tab" aria-selected="${state.view === "chart"}" class="sr-tab${state.view === "chart" ? " is-active" : ""}" data-sr-view="chart">冲榜新品<span class="sr-cnt">${chartAll.length}</span></button></div><button class="theme-cycle" type="button" data-theme-cycle aria-label="切换深浅色">${icon("sun")}</button></div></header>
   <section class="sr-filters" aria-label="类型筛选"><div class="sr-pill-group">${MECH_OPTIONS.map(m => `<button type="button" class="sr-pill${state.mech === m ? " is-active" : ""}" data-sr-mech="${esc(m)}">${esc(m)}</button>`).join("")}</div>${ctxPills}</section>
   ${visible.length ? `<div class="sr-grid">${visible.map(productCardHtml).join("")}</div>` : empty("当前筛选条件下暂无匹配产品")}`;
 }
 function productModalHtml(p, zoomUrl = "") {
   if (!p) return "";
   const primaryLink = p.app_store_url || p.play_store_url || p.web_url;
-  const primaryLabel = p.app_store_url ? "App Store" : p.play_store_url ? "Google Play" : "访问官网";
-  const shots = (p.screenshots || []).map(s => ({url:safeMediaSrc(s.url), label:s.label || "产品画面"})).filter(s => s.url);
+  const primaryLabel = p.app_store_url ? "苹果商店" : p.play_store_url ? "安卓商店" : "访问官网";
+  const shots = (p.screenshots || []).map(s => ({url:safeMediaSrc(s.url), label:s.label === "App Store 截图" ? "商店界面截图" : zhPlatformText(s.label || "产品画面")})).filter(s => s.url);
   const cc = p.cross_check || {};
   const verified = Array.isArray(cc.verified_points) ? cc.verified_points : [];
   const divergences = Array.isArray(cc.divergences) ? cc.divergences : [];
   const hasCc = verified.length || divergences.length;
   return `<div class="sr-backdrop is-open" id="sr-backdrop" role="dialog" aria-modal="true" aria-label="${esc(p.name)}"><div class="sr-modal" id="sr-modal">
-    <div class="sr-modal-head"><div class="sr-modal-id">${productIconHtml(p)}<div><h2 class="sr-modal-title">${esc(p.name)}</h2><div class="sr-subline"><span>${esc(p.company)}</span><span>·</span><span>${esc(p.platform || p.release_status)}</span></div></div></div><div class="sr-modal-act">${primaryLink ? external(primaryLink, primaryLabel, "btn primary", true) : ""}<button type="button" class="sr-close" data-sr-close aria-label="关闭详情">${icon("close")}</button></div></div>
+    <div class="sr-modal-head"><div class="sr-modal-id">${productIconHtml(p)}<div><h2 class="sr-modal-title">${esc(p.name)}</h2><div class="sr-subline"><span>${esc(p.company)}</span><span>·</span><span>${esc(zhPlatformText(p.platform || p.release_status))}</span></div></div></div><div class="sr-modal-act">${primaryLink ? external(primaryLink, primaryLabel, "btn primary", true) : ""}<button type="button" class="sr-close" data-sr-close aria-label="关闭详情">${icon("close")}</button></div></div>
     <div class="sr-modal-body" id="sr-detail-scroll">
-      <dl class="sr-meta-grid"><div class="sr-meta-item"><dt>出品团队</dt><dd>${esc(p.company)}</dd></div><div class="sr-meta-item"><dt>融资与阶段</dt><dd>${esc(p.funding || "未公开披露")}</dd></div><div class="sr-meta-item"><dt>投资方 / 背景</dt><dd>${esc(p.investors || "独立团队")}</dd></div><div class="sr-meta-item"><dt>榜单与发现</dt><dd>${esc(p.source_note || p.release_status)}</dd></div></dl>
+      <dl class="sr-meta-grid"><div class="sr-meta-item"><dt>出品团队</dt><dd>${esc(p.company)}</dd></div><div class="sr-meta-item"><dt>融资与阶段</dt><dd>${esc(p.funding || "未公开披露")}</dd></div><div class="sr-meta-item"><dt>投资方 / 背景</dt><dd>${esc(p.investors || "独立团队")}</dd></div><div class="sr-meta-item"><dt>榜单与发现</dt><dd>${esc(zhPlatformText(p.source_note || p.release_status))}</dd></div></dl>
       ${shots.length ? `<div class="sr-gallery">${shots.map(s => `<button type="button" class="sr-shot-btn" data-sr-zoom="${esc(s.url)}" aria-label="放大查看 ${esc(s.label)}"><img src="${esc(s.url)}" alt="${esc(s.label)}"><span class="sr-shot-cap"><span>${esc(s.label)}</span>${icon("zoom")}</span></button>`).join("")}</div>` : ""}
       ${hasCc ? `<section class="sr-crosscheck"><div class="sr-cc-title">${icon("info")}<span>多方交叉比对（商店数据 · 热门评测帖 · 真实用户评价）</span></div><div class="sr-cc-list">${verified.map(v => `<div class="sr-cc-row ok">${icon("ok")}<span>${esc(v)}</span></div>`).join("")}${divergences.map(d => `<div class="sr-cc-row warn">${icon("warn")}<span>${esc(d)}</span></div>`).join("")}</div></section>` : ""}
       <div class="sr-dossier">${(p.deep || []).map((sec, idx) => `<section class="sr-dsec"><h3><span class="sr-no">${String(idx + 1).padStart(2, "0")}</span><span>${esc(sec.title)}</span></h3><p>${esc(sec.body)}</p></section>`).join("")}</div>
@@ -601,7 +626,7 @@ if (typeof document !== "undefined") {
       if (rawHash.startsWith("#p/")) {
         try { radarState.activeId = decodeURIComponent(rawHash.slice(3)); } catch (_) { radarState.activeId = ""; }
       }
-      document.title = `Social Radar · ${W.product}`;
+      document.title = `社交产品雷达 · ${W.product}`;
       document.getElementById("main").innerHTML = radarHtml(data, radarState);
       renderRadarOverlay();
       return;

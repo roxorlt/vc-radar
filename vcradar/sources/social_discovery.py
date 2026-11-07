@@ -344,14 +344,14 @@ def discover_hn_and_ph_communities(*, http_json=_http_get_json) -> list[ProductC
                 web_url=ext_url,
                 description=f"{cleaned}\n{str(hit.get('story_text') or '')[:800]}".strip(),
                 funding_text="早期独立产品",
-                investors_text="Show HN 社区首发",
-                release_status_text="Web 已上线",
-                source_note=f"Hacker News Show HN（{points} 赞）",
+                investors_text="极客社区首发",
+                release_status_text="网页版已上线",
+                source_note=f"极客社区首发（{points} 赞）",
                 seed_sources=[
                     {
                         "source_kind": "community_post",
                         "url": hn_item_url,
-                        "source_name": "Hacker News",
+                        "source_name": "极客社区讨论",
                         "title": title,
                         "excerpt": f"{cleaned}\n{str(hit.get('story_text') or '')[:1000]}",
                     }
@@ -390,14 +390,14 @@ def discover_hn_and_ph_communities(*, http_json=_http_get_json) -> list[ProductC
                             web_url=href,
                             description=summary[:1000],
                             funding_text="早期独立产品",
-                            investors_text="Product Hunt 首发",
+                            investors_text="新品社区首发",
                             release_status_text="产品已上线",
-                            source_note="Product Hunt 每日新品",
+                            source_note="海外新品社区榜单",
                             seed_sources=[
                                 {
                                     "source_kind": "community_post",
                                     "url": href,
-                                    "source_name": "Product Hunt",
+                                    "source_name": "海外新品社区",
                                     "title": title,
                                     "excerpt": summary[:800],
                                 }
@@ -455,7 +455,10 @@ def discover_vc_social_candidates(conn: sqlite3.Connection) -> list[ProductCandi
             investors = f"{'、'.join(leads[:2])} 领投" + (f" · {'、'.join(follows[:2])} 参投" if follows else "")
 
         amt_str = fx.format_amount(dict(row), row["amount_text"]) if row["amount_status"] == "披露" and row["amount_text"] else ""
-        round_str = row["round_norm"] if row["round_norm"] not in {"待核", "过滤", ""} else (f"YC {row['yc_batch']}" if row["yc_batch"] else "早期轮次")
+        round_raw = str(row["round_norm"] or "").strip()
+        if round_raw.lower() == "pre-seed":
+            round_raw = "种子前轮"
+        round_str = round_raw if round_raw not in {"待核", "过滤", ""} else (f"YC {row['yc_batch']}" if row["yc_batch"] else "早期轮次")
         funding_display = f"{round_str} · {amt_str}" if amt_str and "未披露" not in amt_str else round_str
 
         src_rows = conn.execute(
@@ -513,14 +516,14 @@ def discover_vc_social_candidates(conn: sqlite3.Connection) -> list[ProductCandi
 
 
 VC_SOCIAL_SEARCH_QUERIES: tuple[str, ...] = (
-    '"social app" startup raises million seed OR "pre-seed" OR "Series A" 2025 OR 2026 TechCrunch',
-    '"consumer social" startup raises million a16z OR Benchmark OR Founders Fund OR Lightspeed 2025 OR 2026',
-    '"friends" OR "community app" iOS startup raises seed million TechCrunch 2025 OR 2026',
-    '"invite-only" OR "waitlist" social app startup raises seed million 2025 OR 2026',
+    '"social app" startup raises seed OR "pre-seed" OR "Series A" 2025 OR 2026 TechCrunch',
+    '"consumer social" startup raises a16z OR Benchmark OR Founders Fund OR Lightspeed 2025 OR 2026',
+    '"friends" OR "community app" iOS startup raises seed TechCrunch 2025 OR 2026',
     '社交 App 社区 融资 种子轮 OR 天使轮 2025 OR 2026 36氪',
+    'SNS アプリ 資金調達 OR 出資 シードラウンド PR TIMES 2025 OR 2026',
 )
 
-VC_DEAL_EXTRACT_PROMPT = """你是早期消费级社交产品研究员。请从下面多篇公开科技媒体融资报道摘录中，提取所有属于「人与人连接型消费级社交 / 社区 / 好友互动 App 或 Web 产品」的早期融资项目（Pre-Seed / 天使轮 / 种子轮 / A 轮）。
+VC_DEAL_EXTRACT_PROMPT = """你是早期消费级社交产品研究员。请从下面多篇公开科技媒体融资报道摘录中，提取所有属于「人与人连接型消费级社交 / 社区 / 好友互动 App 或 Web 产品」的早期融资项目（种子前轮 / 天使轮 / 种子轮 / A 轮，含未披露具体金额的早期出资）。
 严格剔除：B2B 企业软件、社媒营销自动化后台、纯单机 AI 陪聊虚拟人、金融交易、医疗与硬件。
 返回严格合法 JSON 对象：
 {
@@ -529,11 +532,11 @@ VC_DEAL_EXTRACT_PROMPT = """你是早期消费级社交产品研究员。请从�
       "product_name": "具体产品或 App 名称（简短准确）",
       "company_name": "出品公司名（若与产品同名可填相同名字）",
       "web_url": "文中提及的产品官网 URL，不确定则填空字符串",
-      "funding_text": "中文轮次与金额，如 '种子轮 · 820 万美元' 或 'Pre-Seed · 2000 万美元'",
-      "investors_text": "中文领投/参投机构，如 'a16z 领投'",
-      "summary": "一句话说明产品核心社交玩法",
+      "funding_text": "纯中文轮次与金额，如 '种子轮 · 820 万美元' 或 '种子轮 · 金额未公开'",
+      "investors_text": "纯中文领投/参投机构，如 'a16z 领投' 或 'ZVC、DG 大和创投参投'",
+      "summary": "纯中文一句话说明产品核心社交玩法",
       "source_url": "对应报道原文 URL（必须直接取自输入条目）",
-      "source_title": "对应报道标题"
+      "source_title": "对应报道标题（翻译为简体中文）"
     }
   ]
 }
@@ -592,7 +595,6 @@ def discover_vc_social_via_search(search_client, llm_client) -> list[ProductCand
         web = str(item.get("web_url") or "").strip()
         if not web.startswith(("http://", "https://")):
             web = ""
-        host = (urlsplit(src_url).hostname or "媒体").removeprefix("www.")
         meta = valid_urls[src_url]
         out.append(
             ProductCandidate(
@@ -607,13 +609,13 @@ def discover_vc_social_via_search(search_client, llm_client) -> list[ProductCand
                 funding_text=fx.format_amount_text(str(item.get("funding_text") or "早期轮次").strip())[:48],
                 investors_text=str(item.get("investors_text") or "早期机构投资").strip()[:60],
                 release_status_text="待探测上线状态",
-                source_note=f"{host} 融资报道",
+                source_note="海外创投融资报道",
                 seed_sources=[
                     {
                         "source_kind": "vc_article",
                         "url": src_url,
-                        "source_name": host,
-                        "title": meta["title"],
+                        "source_name": "海外创投报道",
+                        "title": str(item.get("source_title") or meta["title"])[:140],
                         "excerpt": meta["excerpt"],
                     }
                 ],

@@ -115,6 +115,29 @@ const SEO_SCRAPER_HOSTS = [
   "chandashi.com",
   "data.ai",
   "similarweb.com",
+  "foxdata.com",
+  "foxdata.cn",
+  "mwm.ai",
+  "applion.jp",
+  "appgoblin.info",
+  "appmagic.rocks",
+  "apprankspy.com",
+  "app-ranking.net",
+  "apkcube.com",
+  "chrome-stats.com",
+  "androidrank.org",
+  "apprecs.com",
+  "appstor.io",
+  "hn.algolia.com",
+  "ldplayer.net",
+  "memuplay.com",
+  "1ting.com",
+  "storelift.net",
+  "unstar.app",
+  "fluxbuilder.com",
+  "bumetric.com",
+  "clubhousedb.com",
+  "biyografya.com",
 ];
 
 const BAD_IMG_URL_RE =
@@ -128,82 +151,95 @@ function buildVcSearchQueries(nowMs = Date.now()) {
   const curYear = new Date(nowMs + 8 * 3600 * 1000).getUTCFullYear();
   const yrClause = `${curYear - 1} OR ${curYear}`;
   return [
-    `"social app" startup raises million seed OR "pre-seed" OR "Series A" ${yrClause} TechCrunch`,
-    `"consumer social" startup raises million a16z OR Benchmark OR Founders Fund OR Lightspeed ${yrClause}`,
+    `"social app" startup raises seed OR "pre-seed" OR "Series A" ${yrClause} TechCrunch`,
+    `"consumer social" startup seed round a16z OR Benchmark OR Founders Fund OR Lightspeed ${yrClause}`,
     `社交 App 社区 融资 种子轮 OR 天使轮 ${yrClause} 36氪`,
+    `SNS アプリ コミュニティ シードラウンド 出資 OR 資金調達 ${yrClause} PR TIMES`,
   ];
 }
 
-const VC_DEAL_EXTRACT_PROMPT = `你是早期消费级社交产品研究员。请从下面多篇公开科技媒体融资报道摘录中，提取所有属于「人与人连接型消费级社交 / 社区 / 好友互动 App 或 Web 产品」的早期融资项目（Pre-Seed / 天使轮 / 种子轮 / A 轮）。
+const VC_DEAL_EXTRACT_PROMPT = `你是早期消费级社交产品研究员。请从下面多篇公开科技媒体融资报道摘录中，提取所有属于「人与人连接型消费级社交 / 社区 / 好友互动 App 或 Web 产品」的早期融资项目（种子前轮 / 天使轮 / 种子轮 / A 轮）。
 严格剔除：B2B 企业软件、社媒营销自动化后台、纯单机 AI 陪聊虚拟人、金融交易、医疗与硬件。
+所有说明字段必须使用简体中文（严禁夹杂日韩假名谚文或英文长句）。
 返回严格合法 JSON 对象：
 {
   "deals": [
     {
-      "product_name": "具体产品或 App 名称（简短准确）",
-      "company_name": "出品公司名（若与产品同名可填相同名字）",
+      "product_name": "产品中文名或简短品牌名（若原名为日韩文或英文短语请译为中文）",
+      "company_name": "出品公司或团队中文名",
       "web_url": "文中提及的产品官网 URL，不确定则填空字符串",
-      "funding_text": "中文轮次与金额，如 '种子轮 · 820 万美元' 或 'Pre-Seed · 2000 万美元'",
-      "investors_text": "中文领投/参投机构，如 'a16z 领投'",
-      "summary": "一句话说明产品核心社交玩法",
+      "funding_text": "纯中文轮次与金额，如 '种子轮 · 820 万美元'、'种子前轮 · 2000 万美元' 或 '种子轮 · 金额未公开'",
+      "investors_text": "纯中文领投/参投机构，如 'a16z 领投' 或 'ZVC、DGDV 参投'",
+      "summary": "纯中文一句话说明产品核心社交玩法",
       "source_url": "对应报道原文 URL（必须直接取自输入条目）",
-      "source_title": "对应报道标题"
+      "source_title": "将对应报道标题译为通顺的简体中文标题"
     }
   ]
 }
 最多返回 10 个互不重复的代表性早期社交产品。`;
 
-export const DOSSIER_SYSTEM_PROMPT = `你是一个常年泡在即刻、小红书、Product Hunt 和日韩美区 App Store 冲浪的 22 岁互联网产品经理朋友。
-你的任务是根据提供的【多方原始证据包】（App Store 多区元数据、App Store 真实高赞与差评、官网正文、搜索抓到的热门评测帖/创始人专访、早期融资记录），完成两件事：
+export const DOSSIER_SYSTEM_PROMPT = `你是一个常年泡在即刻、小红书和海外应用商店冲浪的 22 岁互联网产品经理朋友。
+你的任务是根据提供的【多方原始证据包】（商店多区元数据、真实高赞与差评、官网正文、搜索抓到的热门评测帖/创始人专访、早期融资记录），完成两件事：
 1. 判断它是不是值得讨论的「人与人连接型社交/社区产品」；
-2. 如果准入，先做【多方交叉比对】，再用中文母语大白话写出 6 个角度的深度拆解。
+2. 如果准入，先核实融资信息与【多方交叉比对】，再用纯正中文母语大白话写出 6 个角度的深度拆解，并把外部参考链接标题全部译为简体中文。
 
 ### 一、准入边界（严格执行）
 - **准入（admitted = true）**：核心价值是促进真实人类之间互动、分享、关系建立或共同创作的消费级产品——包括密友日常相机/小组件、陌生人语音/问答/兴趣破冰、书影音/美食/推荐语社区、多人共创画布/房间、校园熟人破冰、或帮真人牵线搭桥的社交应用。
 - **剔除（admitted = false）**：
   1. 纯单机工具（修图滤镜、浏览器、输入法、网盘、VPN、运营商营业厅、日历待办、纯视频剪辑器）；
   2. 只跟 AI 虚拟人单聊谈恋爱/练口语、没有任何真人社交关系链的纯 AI 陪聊工具；
-  3. 面向企业或创作者的 B2B SaaS、社媒营销排期/自动生成帖子/矩阵起号/带货后台、客服营销工具、开发者基础设施、医疗/金融/硬件公司。
-  若剔除，直接返回 \`{"admitted": false, "reject_reason": "简短原因"}\`，其余字段留空即可。
+  3. 面向企业或创作者的 B2B 软件、社媒营销排期/矩阵起号/带货后台、客服工具、开发者基础设施、医疗/金融/硬件公司。
+  若剔除，直接返回 \`{"admitted": false, "reject_reason": "简短中文原因"}\`，其余字段留空即可。
 
-### 二、多方交叉比对原则（核心要求）
-- 把【官方说法】（商店简介/官网）和【外部专访/热帖】（团队人数、日活/下载量、融资、玩法评测）以及【真实用户评论】（5星爽点 vs 1星差评槽点）放在一起比对：
-  - 哪些数据或亮点得到了多方印证，写进 \`cross_check.verified_points\`（1～3 条）；
-  - 官方宣传和真实用户体验哪里有反差（比如闪退卡顿、改版翻车、没人匹配、订阅诱导），或者哪些核心数字只有单方口径/尚未公开，如实写进 \`cross_check.divergences\`（1～2 条），绝不报喜不报忧。
-- 严禁脑补原文证据包里没有的功能、数字或融资金额；证据里没提到的细节直接说没公开。
+### 二、多方交叉比对与融资核实（核心要求）
+- **融资回填核实**：仔细检查外部专访、新闻稿与报道中是否明确提到了**当前这款社交产品或其同一开发商主体**的融资轮次、加速器孵化或出资机构（严禁把同名其他 B2B/广告/电商公司的融资张冠李戴到当前 App 上！）：
+  - 若有明确实锤，用纯中文填入 \`verified_funding\`（如 \`"种子轮 · 金额未公开"\`、\`"种子前轮 · 2000 万美元"\`、\`"a16z 加速器孵化"\`）和 \`verified_investors\`（如 \`"ZVC、DG 大和创投参投"\`）；
+  - 若证据包完全未提及融资，\`verified_funding\` 与 \`verified_investors\` 必须填空字符串 \`""\`，严禁脑补。
+- **交叉比对**：把【官方说法】、【外部专访/热帖】和【真实用户好差评】放在一起比对：
+  - 多方印证的事实写进 \`cross_check.verified_points\`（1～3 条）；
+  - 口碑反差或仅单方口径的数字如实写进 \`cross_check.divergences\`（1～2 条），绝不报喜不报忧。
 
-### 三、说话方式硬性规定（22 岁互联网产品爱好者大白话）
-1. **像跟懂产品的同龄朋友聊微信一样说人话**：句子短一点、画面感强一点，一上来先让人脑子里浮现「点开屏幕看到啥、手指头怎么点」。
-2. **严禁互联网黑话与公文翻译腔**：绝对不准出现「赋能、抓手、闭环、心智、场域、沉淀、矩阵、组合拳、全链路、颗粒度、底层逻辑、生态位、降维打击、该应用程序旨在、致力于为用户提供」；也不要写「信源、核对、脚本、自动、待核、总部位于」，美元金额统一写成「750 万美元」这种中文习惯写法（不要写 \`$7.5M\`）。
-3. **口吻参考（仅示范语气节奏，严禁把示例里的电影/榜单功能搬到当前产品上）**：
-   - 坏例子（翻译腔黑话）："该平台通过构建观影评价矩阵赋能影迷沉淀社交资产。"
-   - 好例子（大白话）："点开就是给你看过的电影排座次，每部片必须跟上一部二选一比大小，排完直接生成你的专属口味单跟朋友撞片单。"
+### 三、说话方式与全中文硬性规定（零外文残留）
+1. **100% 全中文表达**：除极简产品字母品牌词本身（如 Setlog、PicPet、Wabi）外，**严禁在任何字段残留日文假名、韩文谚文、英文句子/短语或其他外文**！原文里的功能名、引语、行业词必须全部意译成自然中文（如 \`waitlist\` 写「候补名单」、\`early access\` 写「抢先体验」、\`streak\` 写「连续打卡」、\`photo dump\` 写「日常随手拍」、\`Pre-Seed\` 写「种子前轮」、\`推し度\` 写「真爱粉程度」、\`イントロクイズ\` 写「前奏猜歌」、\`no ads\` 写「不投广告」）。
+2. **像跟懂产品的同龄朋友聊微信一样说人话**：句子短一点、画面感强一点，一上来先让人脑子里浮现「点开屏幕看到啥、手指头怎么点」。
+3. **严禁互联网黑话与公文翻译腔**：绝对不准出现「赋能、抓手、闭环、心智、场域、沉淀、矩阵、组合拳、全链路、颗粒度、底层逻辑、生态位、降维打击、该应用程序旨在、致力于为用户提供」；也不要写「信源、核对、脚本、自动、待核、总部位于」，美元金额统一写成「750 万美元」这种中文习惯写法（不要写 \`$7.5M\`）。
 
 ### 四、输出 JSON 结构（严格合法 JSON 对象）
 {
   "admitted": true,
   "reject_reason": "",
   "origin_type": "indie 或 bigtech（字节/Meta/腾讯/Snap/Kakao/LINE/Naver 等大厂背景填 bigtech，独立创业团队填 indie）",
-  "badge_text": "卡片右上角 8～14 字精炼亮眼标签，如 '日本总榜 #1 · 750万日活' 或 'a16z 领投 · 密友日常'",
-  "platform_label": "如 'iOS 已上架'、'iOS / Android 已上架'、'Web 可直接玩'、'内测排队中'",
+  "localized_name": "产品中文展示名（若原名为日韩文或含英文描述副标题，必须译为自然中文名，严禁带日韩假名谚文或英文长短语）",
+  "localized_company": "出品团队中文展示名（如 'New Chat 团队'、'日本独立开发者武田翔太'、'字节跳动 TikTok 团队'）",
+  "verified_funding": "实锤融资阶段与金额（纯中文，无实锤则填 ''）",
+  "verified_investors": "实锤投资机构或孵化器（纯中文，无实锤则填 ''）",
+  "badge_text": "卡片右上角 8～14 字精炼纯中文亮眼标签，如 '日本总榜 #1 · 750万日活' 或 '种子轮融资 · 密友日常'",
+  "platform_label": "纯中文上架状态，如 '苹果端已上架'、'苹果 / 安卓已上架'、'网页版可直接玩'、'内测候补中'",
   "mech_tags": ["从固定枚举里选 1～2 个：熟人/密友、陌生人/破冰、兴趣/品味社区、多人共创、校园/破冰、AI辅助连接"],
-  "hook": "卡片一句话大白话钩子（28～52 字）：直接讲清最核心的交互动作或反常识机制，让人一眼看懂怎么玩",
+  "hook": "卡片一句话纯中文大白话钩子（28～52 字）：直接讲清最核心的交互动作或反常识机制，让人一眼看懂怎么玩",
   "cross_check": {
     "verified_points": [
-      "多方印证的事实 1（点明出处，如商店榜单 + 创始人专访）",
-      "多方印证的事实 2"
+      "纯中文多方印证事实 1",
+      "纯中文多方印证事实 2"
     ],
     "divergences": [
-      "口碑反差或单方口径提示（如官方主打极简但差评集中吐槽改版卡顿/订阅贵/鬼城等）"
+      "纯中文口碑反差或单方口径提示"
     ]
   },
   "deep_sections": [
-    {"title": "产品形态与切入点", "body": "90～180 字：点开长啥样、第一步干嘛、切了传统社交软件哪个让人心累的痛点"},
-    {"title": "目标人群与场景", "body": "80～150 字：哪拨人在什么具体时刻打开它，为什么微信/IG/TikTok 满足不了这个微妙需求"},
-    {"title": "核心社交机制与关系链", "body": "90～170 字：熟人还是生人、怎么破冰、发帖或互动门槛怎么压低、靠什么机制防止冷场"},
-    {"title": "冷启动与增长飞轮", "body": "80～160 字：第一批种子人群怎么攒起来的、有什么天然拉人钩子、外部帖子披露了什么下载/日活/冲榜表现"},
-    {"title": "真实口碑、野生玩法与踩过的坑", "body": "90～170 字：结合真实用户好评差评与热门评测帖——大家最上头的野生玩法是什么，骂得最凶的硬伤或翻车点又是什么"},
-    {"title": "商业化与可参考讨论点", "body": "80～150 字：目前怎么赚钱或还在免费攒人，做社交产品最值得拿出来讨论、抄作业或避坑的一两个点"}
+    {"title": "产品形态与切入点", "body": "90～180 字纯中文大白话：点开长啥样、第一步干嘛、切了传统社交软件哪个让人心累的痛点"},
+    {"title": "目标人群与场景", "body": "80～150 字纯中文大白话：哪拨人在什么具体时刻打开它，为什么微信/照片墙/短视频满足不了这个微妙需求"},
+    {"title": "核心社交机制与关系链", "body": "90～170 字纯中文大白话：熟人还是生人、怎么破冰、发帖或互动门槛怎么压低、靠什么机制防止冷场"},
+    {"title": "冷启动与增长飞轮", "body": "80～160 字纯中文大白话：第一批种子人群怎么攒起来的、有什么天然拉人钩子、外部帖子披露了什么下载/日活/冲榜表现"},
+    {"title": "真实口碑、野生玩法与踩过的坑", "body": "90～170 字纯中文大白话：结合真实用户好评差评与热门评测帖——大家最上头的野生玩法是什么，骂得最凶的硬伤或翻车点又是什么"},
+    {"title": "商业化与可参考讨论点", "body": "80～150 字纯中文大白话：目前怎么赚钱或还在免费攒人，做社交产品最值得拿出来讨论、抄作业或避坑的一两个点"}
+  ],
+  "translated_refs": [
+    {
+      "url": "原样对应输入证据中的外部报道或热帖 URL",
+      "source_zh": "纯中文媒体/平台名称（如 'ZVC 创始人专访'、'日本时事通信社'、'海外创投报道'，严禁填英文域名）",
+      "title_zh": "将原外文标题完整译为通顺的简体中文标题（严禁残留任何外文）"
+    }
   ]
 }`;
 
@@ -263,8 +299,10 @@ export function companyToken(name) {
 export function nameMatches(name, text) {
   const tok = companyToken(name);
   if (!tok) return false;
-  const escaped = [...tok].map((ch) => ch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("[\\W_]*");
-  const re = new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, "iu");
+  const escaped = [...tok].map((ch) => ch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("[^\\p{L}\\p{N}]*");
+  const pre = /^[a-z0-9]/i.test(tok) ? "(?<![a-z0-9])" : "";
+  const post = /[a-z0-9]$/i.test(tok) ? "(?![a-z0-9])" : "";
+  const re = new RegExp(`${pre}${escaped}${post}`, "iu");
   return re.test(String(text || "").normalize("NFKC"));
 }
 
@@ -301,6 +339,18 @@ export function sanitizeVernacular(rawText) {
     cleaned = cleaned.split(bad).join(good);
   }
   cleaned = cleaned
+    .replace(/\bpre-seed\b/gi, "种子前轮")
+    .replace(/\bseries\s+a\b/gi, "A 轮")
+    .replace(/\bwaitlist\b/gi, "候补名单")
+    .replace(/\bearly\s+access\b/gi, "抢先体验")
+    .replace(/\bphoto\s+dump\b/gi, "日常随手拍")
+    .replace(/\bstreak\b/gi, "连续打卡")
+    .replace(/\bbug\s+fixes\b/gi, "常规问题修复")
+    .replace(/Hacker\s+News\s+Show\s+HN/gi, "极客社区首发")
+    .replace(/Show\s+HN\s*社区首发/gi, "极客社区首发")
+    .replace(/Product\s+Hunt\s*每日新品/gi, "海外新品社区榜单")
+    .replace(/Product\s+Hunt\s*首发/gi, "新品社区首发")
+    .replace(/[\u3040-\u30ff\uac00-\ud7af]+/g, "")
     .replace(/美国(?:早期|公司|天使轮)/g, "北美地区")
     .replace(/非美国/g, "海外其他地区")
     .replace(/(?:DEEPSEEK|API_KEY|sk-[a-z0-9]{16,}|\.env|Authorization|Bearer\s+|localhost)/gi, "")
@@ -354,16 +404,30 @@ export function normalizeDossierPayload(raw) {
     .filter(Boolean)
     .slice(0, 2);
 
+  const translatedRefs = (Array.isArray(raw.translated_refs) ? raw.translated_refs : [])
+    .filter((r) => r && typeof r === "object" && typeof r.url === "string" && r.url.trim())
+    .map((r) => ({
+      url: r.url.trim(),
+      source_zh: sanitizeVernacular(r.source_zh || "").slice(0, 32),
+      title_zh: sanitizeVernacular(r.title_zh || "").slice(0, 110),
+    }))
+    .filter((r) => r.title_zh || r.source_zh);
+
   return {
     admitted: sections.length >= 4,
     reject_reason: sections.length >= 4 ? "" : "拆解信息不足",
     origin_type: origin,
+    localized_name: sanitizeVernacular(raw.localized_name || "").slice(0, 36),
+    localized_company: sanitizeVernacular(raw.localized_company || "").slice(0, 48),
+    verified_funding: sanitizeVernacular(raw.verified_funding || "").slice(0, 56),
+    verified_investors: sanitizeVernacular(raw.verified_investors || "").slice(0, 72),
     badge_text: sanitizeVernacular(raw.badge_text || "").slice(0, 22),
     platform_label: sanitizeVernacular(raw.platform_label || "").slice(0, 24),
     mech_tags: tags,
     hook: sanitizeVernacular(raw.hook || "").slice(0, 88),
     cross_check: { verified_points: verified, divergences },
     deep_sections: sections,
+    translated_refs: translatedRefs,
   };
 }
 
@@ -499,30 +563,51 @@ function sourceDisplayName(rawUrl) {
   try {
     const host = new URL(rawUrl).hostname.toLowerCase().replace(/^www\./, "");
     const known = {
-      "techcrunch.com": "TechCrunch",
+      "techcrunch.com": "海外创投报道",
       "mp.weixin.qq.com": "微信公众号评测",
       "36kr.com": "36氪",
       "sspai.com": "少数派",
       "zvc.vc": "ZVC 专访",
-      "prtimes.jp": "PR TIMES",
-      "watch.impress.co.jp": "Impress Watch",
-      "thebridge.jp": "THE BRIDGE",
-      "note.com": "note",
-      "reddit.com": "Reddit 讨论",
-      "news.ycombinator.com": "Hacker News",
-      "producthunt.com": "Product Hunt",
-      "substack.com": "Substack",
-      "medium.com": "Medium",
-      "businessinsider.com": "Business Insider",
-      "forbes.com": "Forbes",
+      "prtimes.jp": "日本企业新闻通稿",
+      "jiji.com": "日本时事通信社",
+      "watch.impress.co.jp": "日本科技媒体",
+      "thebridge.jp": "日本创投媒体",
+      "note.com": "日本创作者专栏",
+      "speedrun.a16z.com": "a16z 加速器名录",
+      "a16z.com": "a16z 创投动态",
+      "ycombinator.com": "YC 孵化名录",
+      "news.ycombinator.com": "极客社区讨论",
+      "reddit.com": "海外社区讨论",
+      "producthunt.com": "海外新品社区",
+      "substack.com": "独立专栏评测",
+      "medium.com": "专栏深度文章",
+      "businessinsider.com": "海外商业报道",
+      "forbes.com": "福布斯报道",
+      "fortune.com": "财富商业报道",
+      "bloomberg.com": "彭博商业报道",
+      "alleywatch.com": "纽约创投报道",
+      "siliconangle.com": "硅谷创投报道",
     };
     for (const [domain, label] of Object.entries(known)) {
       if (host === domain || host.endsWith(`.${domain}`)) return label;
     }
-    return host || "外部报道";
+    return "外部报道";
   } catch {
     return "外部报道";
   }
+}
+
+function hasUntranslatedForeignTitle(text) {
+  const s = String(text || "").trim();
+  if (!s) return true;
+  if (/[\u3040-\u30ff\uac00-\ud7af\u0590-\u05ff\u0600-\u06ff\u0400-\u04ff]/.test(s)) return true;
+  const hasCjk = /[\u4e00-\u9fff]/.test(s);
+  const asciiWords = (s.match(/[A-Za-z]{2,}/g) || []).length;
+  return !hasCjk && asciiWords >= 2;
+}
+
+function refUrlLookupKey(rawUrl) {
+  return String(rawUrl || "").trim().replace(/\/+$/, "");
 }
 
 function isRelevantPost(cand, row) {
@@ -1171,9 +1256,9 @@ async function discoverCommunities(net) {
       description: `${cleaned}\n${storyText.slice(0, 800)}`.trim(),
       release_notes: "",
       funding_text: "早期独立产品",
-      investors_text: "Show HN 社区首发",
-      release_status_text: "Web 已上线",
-      source_note: `Hacker News Show HN（${points} 赞）`,
+      investors_text: "极客社区首发",
+      release_status_text: "网页版已上线",
+      source_note: `极客社区首发（${points} 赞）`,
       chart_best_rank: null,
       chart_regions: [],
       rating_avg: null,
@@ -1184,7 +1269,7 @@ async function discoverCommunities(net) {
         {
           source_kind: "community_post",
           url: hnItemUrl,
-          source_name: "Hacker News",
+          source_name: "极客社区讨论",
           title,
           excerpt: `${cleaned}\n${storyText.slice(0, 900)}`,
         },
@@ -1223,9 +1308,9 @@ async function discoverCommunities(net) {
         description: summary.slice(0, 1000),
         release_notes: "",
         funding_text: "早期独立产品",
-        investors_text: "Product Hunt 首发",
+        investors_text: "新品社区首发",
         release_status_text: "产品已上线",
-        source_note: "Product Hunt 每日新品",
+        source_note: "海外新品社区榜单",
         chart_best_rank: null,
         chart_regions: [],
         rating_avg: null,
@@ -1236,7 +1321,7 @@ async function discoverCommunities(net) {
           {
             source_kind: "community_post",
             url: href,
-            source_name: "Product Hunt",
+            source_name: "海外新品社区",
             title,
             excerpt: summary.slice(0, 800),
           },
@@ -1545,7 +1630,7 @@ async function enrichCandidate(cand, { net, apiKey, model = "deepseek-flash", me
     reviews = reviews.slice(0, 10);
   }
 
-  // 4. 调用 DeepSeek Search 搜索热门评测帖与专访
+  // 4. 调用 DeepSeek Search 搜索热门评测帖、专访与多语种早期融资记录
   let anchor = "";
   if (cand.company_name && cand.company_name.toLowerCase() !== cand.name.toLowerCase()) {
     anchor = cand.company_name.split(",")[0].split("Inc")[0].trim().slice(0, 24);
@@ -1554,6 +1639,9 @@ async function enrichCandidate(cand, { net, apiKey, model = "deepseek-flash", me
   }
   const queries = [
     `"${cand.name}" ${anchor ? `${anchor} ` : ""}app interview OR DAU OR downloads OR funding`.slice(0, 120),
+    ...(cand.origin_type !== "bigtech"
+      ? [`"${cand.name}" ${anchor ? `${anchor} ` : ""}funding OR "seed round" OR 融资 OR 出資 OR 資金調達 OR 투자`.slice(0, 120)]
+      : []),
     `"${cand.name}" social app review OR features OR how it works`.slice(0, 120),
     `"${cand.name}" App 评测 OR 玩法 OR 社交 OR 日活`.slice(0, 120),
   ];
@@ -1594,7 +1682,7 @@ async function enrichCandidate(cand, { net, apiKey, model = "deepseek-flash", me
     }
   }
 
-  // 5. 组装证据包调用 DeepSeek 输出准入判定 + 交叉比对 + 6 维度大白话拆解
+  // 5. 组装证据包调用 DeepSeek 输出准入判定 + 融资核实 + 交叉比对 + 全中文 6 维度大白话拆解
   const evidenceBlocks = [
     [
       "【产品基础档案】",
@@ -1616,14 +1704,16 @@ async function enrichCandidate(cand, { net, apiKey, model = "deepseek-flash", me
   }
   if (hotPosts.length) {
     const postsTxt = hotPosts
-      .slice(0, 5)
-      .map((p, idx) => `- 帖子 ${idx + 1}：《${p.title}》（来源：${p.source_name}）\n  摘要：${p.excerpt.slice(0, 850)}`)
+      .slice(0, 6)
+      .map((p, idx) => `- 帖子 ${idx + 1}：《${p.title}》（来源：${p.source_name}｜URL：${p.url}）\n  摘要：${p.excerpt.slice(0, 850)}`)
       .join("\n\n");
     evidenceBlocks.push(`【搜索服务抓到的外部热门帖子、专访与评测】\n${postsTxt}`);
   }
   for (const seed of cand.seed_sources || []) {
     if (seed.source_kind === "vc_article" || seed.source_kind === "community_post") {
-      evidenceBlocks.push(`【早期报道/首发帖：《${seed.title || ""}》（${seed.source_name || ""}）】\n${String(seed.excerpt || "").slice(0, 850)}`);
+      evidenceBlocks.push(
+        `【早期报道/首发帖：《${seed.title || ""}》（${seed.source_name || ""}｜URL：${seed.url || ""}）】\n${String(seed.excerpt || "").slice(0, 850)}`
+      );
     }
   }
 
@@ -1672,34 +1762,77 @@ async function enrichCandidate(cand, { net, apiKey, model = "deepseek-flash", me
     }
   }
 
-  // 7. 外部参考链接整理
+  const isBigtech = normalized.origin_type === "bigtech";
+  const displayProdName = normalized.localized_name || sanitizeVernacular(cand.name) || "海外社交新品";
+  const displayCompany = normalized.localized_company || sanitizeVernacular(cand.company_name || displayProdName) || displayProdName;
+
+  // 7. 融资回填与双通道标记（冲榜新品被核实有早期融资时同步回填，并打上 has_vc 标记进入「早期融资」视图）
+  const unverifiedFundingSet = new Set(["", "未公开披露融资", "早期独立产品", "未公开披露"]);
+  let finalFunding = sanitizeVernacular(cand.funding_text);
+  let finalInvestors = sanitizeVernacular(cand.investors_text);
+  if (!isBigtech && normalized.verified_funding) {
+    if (cand.channel !== "vc" || unverifiedFundingSet.has(finalFunding) || finalFunding === "早期轮次") {
+      finalFunding = normalized.verified_funding;
+    }
+    if (
+      normalized.verified_investors &&
+      (cand.channel !== "vc" ||
+        unverifiedFundingSet.has(finalInvestors) ||
+        finalInvestors === "自然冲榜新品" ||
+        finalInvestors === "极客社区首发" ||
+        finalInvestors === "新品社区首发" ||
+        finalInvestors === "早期机构投资")
+    ) {
+      finalInvestors = normalized.verified_investors;
+    } else if (!normalized.verified_investors && finalInvestors === "自然冲榜新品") {
+      finalInvestors = "早期创投支持";
+    }
+  }
+  const hasVc =
+    !isBigtech &&
+    (cand.channel === "vc" ||
+      (Boolean(finalFunding) && !unverifiedFundingSet.has(finalFunding) && !finalFunding.endsWith("旗下新包")));
+
+  // 8. 外部参考链接全中文整理（优先采用模型翻译标题，缺失或仍含外文时生成纯中文兜底标题）
+  const trByUrl = new Map();
+  for (const tr of normalized.translated_refs || []) {
+    if (tr.url) trByUrl.set(refUrlLookupKey(tr.url), tr);
+  }
+  const buildZhRefLink = (url, rawTitle, fallbackSource) => {
+    const tr = trByUrl.get(refUrlLookupKey(url));
+    const safeDefaultSource = sourceDisplayName(url);
+    const candidateSource = sanitizeVernacular(tr?.source_zh || fallbackSource || safeDefaultSource);
+    const finalSource = candidateSource && !hasUntranslatedForeignTitle(candidateSource) ? candidateSource : safeDefaultSource;
+    const candidateTitle = sanitizeVernacular(tr?.title_zh || rawTitle || "");
+    const finalTitle =
+      candidateTitle && !hasUntranslatedForeignTitle(candidateTitle)
+        ? candidateTitle
+        : `${displayProdName} 相关${finalSource.endsWith("报道") || finalSource.endsWith("评测") || finalSource.endsWith("专访") || finalSource.endsWith("讨论") || finalSource.endsWith("通稿") ? finalSource : `${finalSource}报道`}`;
+    return { title: finalTitle, source: finalSource, url };
+  };
+
   const refLinks = [];
   const seenRefUrls = new Set();
   for (const p of hotPosts) {
     if (p.url && !seenRefUrls.has(p.url)) {
       seenRefUrls.add(p.url);
-      refLinks.push({
-        title: sanitizeVernacular(p.title || p.source_name) || "外部评测",
-        source: sanitizeVernacular(p.source_name),
-        url: p.url,
-      });
+      refLinks.push(buildZhRefLink(p.url, p.title, p.source_name));
     }
   }
   for (const seed of cand.seed_sources || []) {
     if (seed.url && /^https?:\/\//i.test(seed.url) && seed.source_kind !== "appstore_meta" && !seenRefUrls.has(seed.url)) {
       seenRefUrls.add(seed.url);
-      refLinks.push({
-        title: sanitizeVernacular(seed.title || seed.source_name || "报道原文"),
-        source: sanitizeVernacular(seed.source_name || sourceDisplayName(seed.url)),
-        url: seed.url,
-      });
+      refLinks.push(buildZhRefLink(seed.url, seed.title, seed.source_name));
     }
   }
 
-  let badgeKind = cand.channel === "vc" ? "vc" : normalized.origin_type === "bigtech" ? "warn" : "hot";
+  let badgeKind = cand.channel === "vc" ? "vc" : isBigtech ? "warn" : "hot";
   if (cand.live_status === "waitlist") badgeKind = "warn";
   const priorityScore =
-    Number(cand.priority_score || 50) + (hotPosts.length >= 2 ? 15 : 0) + (mirroredShots.length > 0 ? 8 : 0);
+    Number(cand.priority_score || 50) +
+    (hotPosts.length >= 2 ? 15 : 0) +
+    (mirroredShots.length > 0 ? 8 : 0) +
+    (cand.channel !== "vc" && hasVc ? 10 : 0);
 
   return {
     admitted: true,
@@ -1709,11 +1842,12 @@ async function enrichCandidate(cand, { net, apiKey, model = "deepseek-flash", me
     domain: registrableDomain(cand.web_url),
     product: {
       id: cand.product_id,
-      name: sanitizeVernacular(cand.name) || cand.name,
+      name: displayProdName,
       channel: cand.channel === "vc" ? "vc" : "chart",
+      has_vc: hasVc,
       live_status: ["ios", "android", "web", "waitlist"].includes(cand.live_status) ? cand.live_status : "ios",
-      origin: normalized.origin_type === "bigtech" ? "bigtech" : "indie",
-      company: sanitizeVernacular(cand.company_name || cand.name),
+      origin: isBigtech ? "bigtech" : "indie",
+      company: displayCompany,
       company_id: cand.company_id || null,
       app_store_url: cand.app_store_url || "",
       play_store_url: cand.play_store_url || "",
@@ -1728,8 +1862,8 @@ async function enrichCandidate(cand, { net, apiKey, model = "deepseek-flash", me
       cross_check: normalized.cross_check,
       screenshots: mirroredShots.slice(0, 6),
       ref_links: refLinks.slice(0, 6),
-      funding: sanitizeVernacular(cand.funding_text),
-      investors: sanitizeVernacular(cand.investors_text),
+      funding: finalFunding,
+      investors: finalInvestors,
       release_status: sanitizeVernacular(cand.release_status_text),
       source_note: sanitizeVernacular(cand.source_note),
       rating_avg: cand.rating_avg ?? null,
@@ -1859,7 +1993,7 @@ export async function runSocialRadarPatrol(
     discoverVcSocialDeals(net, apiKey, model, nowMs),
   ]);
 
-  // 顺手免费刷新已在库 iOS 产品的最新评分人数
+  // 顺手免费刷新已在库 iOS 产品的最新评分人数，并把新发现的早期融资报道回填到已在库的自然冲榜产品上
   let metadataRefreshed = 0;
   for (const entry of Object.values(catalog.products)) {
     if (entry.app_store_id && lookupMeta.has(entry.app_store_id)) {
@@ -1868,6 +2002,30 @@ export async function runSocialRadarPatrol(
         entry.product.rating_avg = Math.round(meta.averageUserRating * 100) / 100;
         entry.product.rating_count = Math.trunc(meta.userRatingCount || 0);
         metadataRefreshed += 1;
+      }
+    }
+  }
+  const sharedDealHosts = new Set(["", "apple.com", "google.com", "producthunt.com", "ycombinator.com"]);
+  const unverifiedFundingVals = new Set(["", "未公开披露融资", "早期独立产品", "未公开披露"]);
+  for (const deal of vcCands) {
+    const dealDom = registrableDomain(deal.web_url);
+    const cleanDealDom = sharedDealHosts.has(dealDom) ? "" : dealDom;
+    const dealTok = companyToken(deal.name);
+    for (const entry of Object.values(catalog.products)) {
+      const p = entry?.product;
+      if (!p || p.origin === "bigtech" || p.has_vc || p.channel === "vc") continue;
+      if (!unverifiedFundingVals.has(String(p.funding || "").trim())) continue;
+      const domMatched = cleanDealDom && entry.domain && cleanDealDom === entry.domain;
+      const nameMatched =
+        dealTok.length >= 4 &&
+        companyToken(p.name) === dealTok &&
+        (domMatched || (deal.company_name && nameMatches(deal.company_name, `${p.company} ${p.name}`)));
+      if (domMatched || nameMatched) {
+        p.funding = sanitizeVernacular(deal.funding_text) || "早期轮次";
+        p.investors = sanitizeVernacular(deal.investors_text) || "早期创投支持";
+        p.has_vc = true;
+        metadataRefreshed += 1;
+        break;
       }
     }
   }

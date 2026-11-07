@@ -41,6 +41,7 @@ from .sources.social_discovery import (
 SEO_SCRAPER_HOSTS = (
     "apkpure.com",
     "apkcombo.com",
+    "apkcube.com",
     "uptodown.com",
     "softonic.com",
     "appbrain.com",
@@ -59,6 +60,25 @@ SEO_SCRAPER_HOSTS = (
     "chandashi.com",
     "data.ai",
     "similarweb.com",
+    "foxdata.com",
+    "mwm.ai",
+    "applion.jp",
+    "appgoblin.info",
+    "appmagic.rocks",
+    "apprankspy.com",
+    "app-ranking.net",
+    "chrome-stats.com",
+    "androidrank.org",
+    "apprecs.com",
+    "appstor.io",
+    "storelift.net",
+    "hn.algolia.com",
+    "1ting.com",
+    "unstar.app",
+    "fluxbuilder.com",
+    "bumetric.com",
+    "clubhousedb.com",
+    "biyografya.com",
 )
 
 BAD_IMG_URL_RE = re.compile(
@@ -233,6 +253,19 @@ def SOCIAL_WORD_IN_DESC(desc: str) -> bool:
     return bool(re.search(r"\b(?:friends?|social|community|share|chat|club)\b|社交|好友|社区", desc, re.I))
 
 
+def _product_name_matches(name: str, text: str) -> bool:
+    """支持中日韩无空格助词粘连（如 'Setlogは' / 'ソラを' / 'New Chat株式会社'）的名称匹配。"""
+    tok = search.company_token(name)
+    if not tok:
+        return False
+    norm_text = __import__("unicodedata").normalize("NFKC", str(text or "")).casefold()
+    sep = r"[^\w]*"
+    escaped = sep.join(re.escape(ch) for ch in tok)
+    pre = r"(?<![a-z0-9])" if re.match(r"^[a-z0-9]", tok) else ""
+    post = r"(?![a-z0-9])" if re.search(r"[a-z0-9]$", tok) else ""
+    return re.search(f"{pre}{escaped}{post}", norm_text, re.I) is not None
+
+
 def _is_relevant_post(cand: ProductCandidate, row: dict) -> bool:
     url = str(row.get("url") or "").strip()
     if not url.startswith(("http://", "https://")):
@@ -243,7 +276,7 @@ def _is_relevant_post(cand: ProductCandidate, row: dict) -> bool:
     if host in {"apps.apple.com", "play.google.com"}:
         return False
     blob = " ".join(str(row.get(k) or "") for k in ("title", "snippet", "content", "url"))
-    if not (search.name_matches(cand.name, blob) or (cand.company_name and search.name_matches(cand.company_name, blob))):
+    if not (_product_name_matches(cand.name, blob) or (cand.company_name and _product_name_matches(cand.company_name, blob))):
         return False
     # 短常见英文单词产品名（如 Pops / Valid / Cove）要求同时命中社交/应用/公司上下文，杜绝同名噪音
     tok = search.company_token(cand.name)
@@ -257,7 +290,7 @@ def _is_relevant_post(cand: ProductCandidate, row: dict) -> bool:
             )
         )
         if cand.company_name and cand.company_name.lower() != cand.name.lower():
-            ctx_ok = ctx_ok or search.name_matches(cand.company_name, blob)
+            ctx_ok = ctx_ok or _product_name_matches(cand.company_name, blob)
         if not ctx_ok:
             return False
     return True
@@ -266,27 +299,46 @@ def _is_relevant_post(cand: ProductCandidate, row: dict) -> bool:
 def _source_display_name(url: str) -> str:
     host = (urlsplit(url).hostname or "").lower().removeprefix("www.")
     known = {
-        "techcrunch.com": "TechCrunch",
+        "techcrunch.com": "海外创投报道",
         "mp.weixin.qq.com": "微信公众号评测",
         "36kr.com": "36氪",
         "sspai.com": "少数派",
         "zvc.vc": "ZVC 专访",
-        "prtimes.jp": "PR TIMES",
-        "watch.impress.co.jp": "Impress Watch",
-        "thebridge.jp": "THE BRIDGE",
-        "note.com": "note",
-        "reddit.com": "Reddit 讨论",
-        "news.ycombinator.com": "Hacker News",
-        "producthunt.com": "Product Hunt",
-        "substack.com": "Substack",
-        "medium.com": "Medium",
-        "businessinsider.com": "Business Insider",
-        "forbes.com": "Forbes",
+        "prtimes.jp": "日本企业新闻通稿",
+        "jiji.com": "日本时事通信社",
+        "watch.impress.co.jp": "日本科技媒体",
+        "thebridge.jp": "日本创投媒体",
+        "note.com": "日本创作者专栏",
+        "speedrun.a16z.com": "a16z 加速器名录",
+        "a16z.com": "a16z 创投动态",
+        "ycombinator.com": "YC 孵化名录",
+        "news.ycombinator.com": "极客社区讨论",
+        "reddit.com": "海外社区讨论",
+        "producthunt.com": "海外新品社区",
+        "substack.com": "独立专栏评测",
+        "medium.com": "专栏深度文章",
+        "businessinsider.com": "海外商业报道",
+        "forbes.com": "福布斯报道",
+        "fortune.com": "财富商业报道",
+        "bloomberg.com": "彭博商业报道",
+        "alleywatch.com": "纽约创投报道",
+        "siliconangle.com": "硅谷创投报道",
     }
     for domain, label in known.items():
         if host == domain or host.endswith("." + domain):
             return label
-    return host or "外部报道"
+    return "外部报道"
+
+
+def _has_untranslated_foreign_title(text: str) -> bool:
+    s = str(text or "").strip()
+    if not s:
+        return True
+    if re.search(r"[\u3040-\u30ff\uac00-\ud7af\u0590-\u05ff\u0600-\u06ff\u0400-\u04ff]", s):
+        return True
+    has_cjk = bool(re.search(r"[\u4e00-\u9fff]", s))
+    ascii_words = len(re.findall(r"[A-Za-z]{2,}", s))
+    return (not has_cjk) and ascii_words >= 2
 
 
 def _complete_with_retry(llm_client: llm.LLMClient, system_prompt: str, user_prompt: str, timeout_s: float = 45.0) -> llm.LLMResult:
@@ -425,6 +477,11 @@ def enrich_single_candidate(
 
     queries = [
         f'"{cand.name}" {f"{anchor} " if anchor else ""}app interview OR DAU OR downloads OR funding'[:120],
+        *(
+            [f'"{cand.name}" {f"{anchor} " if anchor else ""}funding OR "seed round" OR 融资 OR 出資 OR 資金調達 OR 투자'[:120]]
+            if cand.origin_type != "bigtech"
+            else []
+        ),
         f'"{cand.name}" social app review OR features OR how it works'[:120],
         f'"{cand.name}" App 评测 OR 玩法 OR 社交 OR 日活'[:120],
     ]
@@ -512,14 +569,14 @@ def enrich_single_candidate(
         evidence_blocks.append(f"【App Store 真实用户好评与差评样本】\n{rev_txt}")
     if hot_posts:
         posts_txt = "\n\n".join(
-            f"- 帖子 {idx}：《{p['title']}》（来源：{p['source_name']}）\n  摘要：{p['excerpt'][:900]}"
-            for idx, p in enumerate(hot_posts[:5], 1)
+            f"- 帖子 {idx}：《{p['title']}》（来源：{p['source_name']}｜URL：{p['url']}）\n  摘要：{p['excerpt'][:900]}"
+            for idx, p in enumerate(hot_posts[:6], 1)
         )
         evidence_blocks.append(f"【搜索服务抓到的外部热门帖子、专访与评测】\n{posts_txt}")
     for seed in cand.seed_sources:
         if seed["source_kind"] in {"vc_article", "community_post"}:
             evidence_blocks.append(
-                f"【早期报道/首发帖：《{seed.get('title', '')}》（{seed.get('source_name', '')}）】\n{seed.get('excerpt', '')[:900]}"
+                f"【早期报道/首发帖：《{seed.get('title', '')}》（{seed.get('source_name', '')}｜URL：{seed.get('url', '')}）】\n{seed.get('excerpt', '')[:900]}"
             )
 
     user_prompt = "\n\n".join(evidence_blocks)
@@ -560,47 +617,78 @@ def enrich_single_candidate(
                 seen_paths.add(path)
                 mirrored_shots.append({"url": path, "label": "App Store 截图"})
 
-    # 7. 整理可点击的外部参考链接（热帖 + 融资报道 + 商店/官网）
+    is_bigtech = (normalized.get("origin_type") or cand.origin_type) == "bigtech"
+    display_prod_name = normalized.get("localized_name") or sanitize_vernacular(cand.name) or "海外社交新品"
+    display_company = normalized.get("localized_company") or sanitize_vernacular(cand.company_name or display_prod_name) or display_prod_name
+
+    # 7. 融资回填与外部参考链接全中文整理
+    unverified_funding_set = {"", "未公开披露融资", "早期独立产品", "未公开披露"}
+    final_funding = sanitize_vernacular(cand.funding_text)
+    final_investors = sanitize_vernacular(cand.investors_text)
+    verified_funding = normalized.get("verified_funding") or ""
+    verified_investors = normalized.get("verified_investors") or ""
+    if not is_bigtech and verified_funding:
+        if cand.channel != "vc" or final_funding in unverified_funding_set or final_funding == "早期轮次":
+            final_funding = verified_funding
+        if verified_investors and (
+            cand.channel != "vc"
+            or final_investors in unverified_funding_set
+            or final_investors in {"自然冲榜新品", "极客社区首发", "新品社区首发", "早期机构投资"}
+        ):
+            final_investors = verified_investors
+        elif not verified_investors and final_investors == "自然冲榜新品":
+            final_investors = "早期创投支持"
+
+    tr_by_url = {
+        deep_fetch.url_key(tr["url"]): tr
+        for tr in (normalized.get("translated_refs") or [])
+        if tr.get("url")
+    }
+
+    def _build_zh_ref(u: str, raw_title: str, fallback_src: str, kind: str) -> dict:
+        tr = tr_by_url.get(deep_fetch.url_key(u)) or {}
+        safe_default_src = _source_display_name(u)
+        cand_src = sanitize_vernacular(tr.get("source_zh") or fallback_src or safe_default_src)
+        final_src = cand_src if (cand_src and not _has_untranslated_foreign_title(cand_src)) else safe_default_src
+        cand_title = sanitize_vernacular(tr.get("title_zh") or raw_title or "")
+        if cand_title and not _has_untranslated_foreign_title(cand_title):
+            final_title = cand_title
+        else:
+            suffix = final_src if final_src.endswith(("报道", "评测", "专访", "讨论", "通稿")) else f"{final_src}报道"
+            final_title = f"{display_prod_name} 相关{suffix}"
+        return {"title": final_title, "source": final_src, "url": u, "kind": kind}
+
     ref_links: list[dict] = []
     seen_ref_urls: set[str] = set()
     for p in hot_posts:
         uk = deep_fetch.url_key(p["url"])
         if uk and uk not in seen_ref_urls:
             seen_ref_urls.add(uk)
-            ref_links.append(
-                {
-                    "title": sanitize_vernacular(p["title"] or p["source_name"]),
-                    "source": sanitize_vernacular(p["source_name"]),
-                    "url": p["url"],
-                    "kind": "post",
-                }
-            )
+            ref_links.append(_build_zh_ref(p["url"], p["title"], p["source_name"], "post"))
     for seed in cand.seed_sources:
         u = seed.get("url") or ""
         uk = deep_fetch.url_key(u)
         if u.startswith("http") and uk and uk not in seen_ref_urls and seed.get("source_kind") != "appstore_meta":
             seen_ref_urls.add(uk)
-            ref_links.append(
-                {
-                    "title": sanitize_vernacular(seed.get("title") or seed.get("source_name") or "报道原文"),
-                    "source": sanitize_vernacular(seed.get("source_name") or _source_display_name(u)),
-                    "url": u,
-                    "kind": "article",
-                }
-            )
+            ref_links.append(_build_zh_ref(u, seed.get("title") or "", seed.get("source_name") or "", "article"))
 
-    badge_kind = "vc" if cand.channel == "vc" else ("warn" if normalized.get("origin_type") == "bigtech" else "hot")
+    badge_kind = "vc" if cand.channel == "vc" else ("warn" if is_bigtech else "hot")
     if cand.live_status == "waitlist":
         badge_kind = "warn"
 
+    has_verified_vc = (not is_bigtech) and (
+        cand.channel == "vc"
+        or (bool(final_funding) and final_funding not in unverified_funding_set and not final_funding.endswith("旗下新包"))
+    )
+
     record = {
         "product_id": cand.product_id,
-        "name": cand.name,
+        "name": display_prod_name,
         "channel": cand.channel,
         "live_status": cand.live_status,
-        "origin_type": normalized.get("origin_type") or cand.origin_type,
+        "origin_type": "bigtech" if is_bigtech else "indie",
         "company_id": cand.company_id,
-        "company_name": sanitize_vernacular(cand.company_name or cand.name),
+        "company_name": display_company,
         "app_store_id": cand.app_store_id,
         "app_store_url": cand.app_store_url,
         "play_store_url": cand.play_store_url,
@@ -615,8 +703,8 @@ def enrich_single_candidate(
         "cross_check": normalized.get("cross_check", {"verified_points": [], "divergences": []}),
         "screenshots": mirrored_shots,
         "ref_links": ref_links[:6],
-        "funding_text": sanitize_vernacular(cand.funding_text),
-        "investors_text": sanitize_vernacular(cand.investors_text),
+        "funding_text": final_funding,
+        "investors_text": final_investors,
         "release_status_text": sanitize_vernacular(cand.release_status_text),
         "source_note": sanitize_vernacular(cand.source_note),
         "chart_best_rank": cand.chart_best_rank,
@@ -624,7 +712,10 @@ def enrich_single_candidate(
         "rating_avg": cand.rating_avg,
         "rating_count": cand.rating_count,
         "first_release_date": cand.first_release_date,
-        "priority_score": cand.priority_score + (15.0 if len(hot_posts) >= 2 else 0.0) + (8.0 if mirrored_shots else 0.0),
+        "priority_score": cand.priority_score
+        + (15.0 if len(hot_posts) >= 2 else 0.0)
+        + (8.0 if mirrored_shots else 0.0)
+        + (10.0 if (cand.channel != "vc" and has_verified_vc) else 0.0),
         "admitted": admitted,
         "reject_reason": normalized.get("reject_reason", ""),
         "enriched_at": stamp,

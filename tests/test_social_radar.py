@@ -672,6 +672,60 @@ def test_radar_ui_filters_and_scroll_lock_in_node_vm(tmp_path):
     assert res["restoredY"] == 240 and res["unlockedPos"] == ""
 
 
+def test_dual_channel_has_vc_and_full_chinese_ui_rendering(tmp_path):
+    """验证冲榜产品带融资实锤时同步出现在「早期融资」与「冲榜新品」双视图，且前端界面无残留外文标签。"""
+    cfg = Config(state_dir=tmp_path / "state", test_mode=True)
+    conn = db.connect(cfg.db_path)
+    db.ensure_social_schema(conn)
+    conn.execute(
+        """INSERT INTO social_product(
+           product_id, name, channel, live_status, origin_type, company_name,
+           app_store_url, platform_label, hook, mech_tags_json, deep_sections_json, cross_check_json,
+           screenshots_json, ref_links_json, funding_text, investors_text, release_status_text, source_note,
+           priority_score, admitted, enriched_at, updated_at
+        ) VALUES (?, ?, 'chart', 'ios', 'indie', ?, 'https://apps.apple.com/jp/app/id6500000001',
+                  'iOS 已上架', '两秒视频拼成密友合拍日历', '["熟人/密友"]', ?, ?, ?, ?,
+                  '种子轮 · 金额未公开', 'ZVC、DG 大和创投参投', 'iOS 已上架（2025-07 首发）', '日本社交榜 #2',
+                  130, 1, '2026-11-07T12:00:00+08:00', '2026-11-07T12:00:00+08:00')""",
+        (
+            "setlog",
+            "Setlog",
+            "New Chat 团队",
+            json.dumps([{"title": t, "body": "全中文大白话拆解正文。"} for t in SECTION_TITLES], ensure_ascii=False),
+            json.dumps({"verified_points": ["获 ZVC 与 DG 大和创投种子轮投资"], "divergences": ["金额未公开"]}, ensure_ascii=False),
+            json.dumps([{"url": "https://img.example.com/s1.jpg", "label": "App Store 截图"}], ensure_ascii=False),
+            json.dumps([{"title": "Setlog 创始人专访：两人团队登顶日韩总榜", "source": "ZVC 专访", "url": "https://zvc.vc/posts/setlog"}], ensure_ascii=False),
+        ),
+    )
+    conn.commit()
+    site_dir = site.build_site(conn, cfg, now=NOW)
+    conn.close()
+
+    node_bin = shutil.which("node")
+    assert node_bin is not None
+    script = r"""
+      const fs = require("fs"), path = require("path");
+      const root = process.argv[1];
+      const ui = require(path.join(root, "app.js"));
+      const d = JSON.parse(fs.readFileSync(path.join(root, "data.json"), "utf8"));
+      const vcIds = ui.selectProducts(d, {...ui.defaultRadarState(), view:"vc"}).map(p => p.id);
+      const chartIds = ui.selectProducts(d, {...ui.defaultRadarState(), view:"chart"}).map(p => p.id);
+      const radar = ui.radarHtml(d, ui.defaultRadarState());
+      const modal = ui.productModalHtml(d.products[0]);
+      console.log(JSON.stringify({ p: d.products[0], vcIds, chartIds, radar, modal }));
+    """
+    proc = subprocess.run([node_bin, "-e", script, str(site_dir)], text=True, capture_output=True, check=True)
+    res = json.loads(proc.stdout)
+    assert res["p"]["has_vc"] is True
+    assert res["vcIds"] == ["setlog"]
+    assert res["chartIds"] == ["setlog"]
+    assert "社交产品雷达" in res["radar"] and "Social Radar" not in res["radar"]
+    assert "苹果端已上架" in res["radar"] and "iOS 已上架" not in res["radar"]
+    assert "融资关联" in res["radar"] and "种子轮 · 金额未公开" in res["radar"]
+    assert "苹果商店" in res["modal"] and "商店界面截图" in res["modal"]
+    assert ">App Store<" not in res["modal"] and "App Store 截图" not in res["modal"]
+
+
 class _CheckAttrParser(HTMLParser):
     def __init__(self, html_str: str):
         super().__init__()
