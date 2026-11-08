@@ -199,8 +199,8 @@ export const DOSSIER_SYSTEM_PROMPT = `你是一个常年泡在即刻、小红书
   - 多方印证的事实写进 \`cross_check.verified_points\`（1～3 条）；
   - 口碑反差或仅单方口径的数字如实写进 \`cross_check.divergences\`（1～2 条），绝不报喜不报忧。
 
-### 三、说话方式与全中文硬性规定（零外文残留）
-1. **100% 全中文表达**：除极简产品字母品牌词本身（如 Setlog、PicPet、Wabi）外，**严禁在任何字段残留日文假名、韩文谚文、英文句子/短语或其他外文**！原文里的功能名、引语、行业词必须全部意译成自然中文（如 \`waitlist\` 写「候补名单」、\`early access\` 写「抢先体验」、\`streak\` 写「连续打卡」、\`photo dump\` 写「日常随手拍」、\`Pre-Seed\` 写「种子前轮」、\`推し度\` 写「真爱粉程度」、\`イントロクイズ\` 写「前奏猜歌」、\`no ads\` 写「不投广告」）。
+### 三、说话方式与全中文硬性规定（App 名称保留原样，引用文章标题与正文译为中文）
+1. **App 名称保留原样，正文与引用文章标题全部译为简体中文**：产品本身的 App 名字（如 Setlog、PicPet、Wabi、ビデオ通話 ソラ）保持原样不要强行意译；但拆解正文与外部参考文章标题（\`translated_refs\`）必须译成自然通顺的简体中文（标题里提到该 App 时同样保留原名）！原文里的功能名、引语、行业词请意译成自然中文（如 \`waitlist\` 写「候补名单」、\`early access\` 写「抢先体验」、\`streak\` 写「连续打卡」、\`photo dump\` 写「日常随手拍」、\`Pre-Seed\` 写「种子前轮」、\`推し度\` 写「真爱粉程度」、\`イントロクイズ\` 写「前奏猜歌」、\`no ads\` 写「不投广告」）。
 2. **像跟懂产品的同龄朋友聊微信一样说人话**：句子短一点、画面感强一点，一上来先让人脑子里浮现「点开屏幕看到啥、手指头怎么点」。
 3. **严禁互联网黑话与公文翻译腔**：绝对不准出现「赋能、抓手、闭环、心智、场域、沉淀、矩阵、组合拳、全链路、颗粒度、底层逻辑、生态位、降维打击、该应用程序旨在、致力于为用户提供」；也不要写「信源、核对、脚本、自动、待核、总部位于」，美元金额统一写成「750 万美元」这种中文习惯写法（不要写 \`$7.5M\`）。
 
@@ -209,8 +209,6 @@ export const DOSSIER_SYSTEM_PROMPT = `你是一个常年泡在即刻、小红书
   "admitted": true,
   "reject_reason": "",
   "origin_type": "indie 或 bigtech（字节/Meta/腾讯/Snap/Kakao/LINE/Naver 等大厂背景填 bigtech，独立创业团队填 indie）",
-  "localized_name": "产品中文展示名（若原名为日韩文或含英文描述副标题，必须译为自然中文名，严禁带日韩假名谚文或英文长短语）",
-  "localized_company": "出品团队中文展示名（如 'New Chat 团队'、'日本独立开发者武田翔太'、'字节跳动 TikTok 团队'）",
   "verified_funding": "实锤融资阶段与金额（纯中文，无实锤则填 ''）",
   "verified_investors": "实锤投资机构或孵化器（纯中文，无实锤则填 ''）",
   "badge_text": "卡片右上角 8～14 字精炼纯中文亮眼标签，如 '日本总榜 #1 · 750万日活' 或 '种子轮融资 · 密友日常'",
@@ -238,7 +236,7 @@ export const DOSSIER_SYSTEM_PROMPT = `你是一个常年泡在即刻、小红书
     {
       "url": "原样对应输入证据中的外部报道或热帖 URL",
       "source_zh": "纯中文媒体/平台名称（如 'ZVC 创始人专访'、'日本时事通信社'、'海外创投报道'，严禁填英文域名）",
-      "title_zh": "将原外文标题完整译为通顺的简体中文标题（严禁残留任何外文）"
+      "title_zh": "将原外文文章标题完整译为通顺的简体中文标题（标题里提及的 App 名称保留原名不要翻译）"
     }
   ]
 }`;
@@ -1763,8 +1761,8 @@ async function enrichCandidate(cand, { net, apiKey, model = "deepseek-flash", me
   }
 
   const isBigtech = normalized.origin_type === "bigtech";
-  const displayProdName = normalized.localized_name || sanitizeVernacular(cand.name) || "海外社交新品";
-  const displayCompany = normalized.localized_company || sanitizeVernacular(cand.company_name || displayProdName) || displayProdName;
+  const displayProdName = String(cand.name || "").trim() || "海外社交新品";
+  const displayCompany = String(cand.company_name || displayProdName).trim() || displayProdName;
 
   // 7. 融资回填与双通道标记（冲榜新品被核实有早期融资时同步回填，并打上 has_vc 标记进入「早期融资」视图）
   const unverifiedFundingSet = new Set(["", "未公开披露融资", "早期独立产品", "未公开披露"]);

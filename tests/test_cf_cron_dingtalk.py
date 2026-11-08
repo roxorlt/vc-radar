@@ -763,8 +763,8 @@ console.log(JSON.stringify({ prod, searchQueries, receiptText: receipt.actionCar
     prod = out["prod"]
     assert prod["channel"] == "chart"
     assert prod["has_vc"] is True
-    assert prod["name"] == "晴空视频通话"
-    assert prod["company"] == "New Chat 团队"
+    assert prod["name"] == "ビデオ通話 ソラ"
+    assert prod["company"] == "New Chat Inc."
     assert prod["funding"] == "种子轮 · 金额未公开"
     assert prod["investors"] == "ZVC、DG 大和创投参投"
     # 验证多语种融资查询词已发出，且 foxdata / applion 垃圾站被彻底过滤
