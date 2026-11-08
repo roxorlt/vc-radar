@@ -618,8 +618,8 @@ def enrich_single_candidate(
                 mirrored_shots.append({"url": path, "label": "App Store 截图"})
 
     is_bigtech = (normalized.get("origin_type") or cand.origin_type) == "bigtech"
-    display_prod_name = normalized.get("localized_name") or sanitize_vernacular(cand.name) or "海外社交新品"
-    display_company = normalized.get("localized_company") or sanitize_vernacular(cand.company_name or display_prod_name) or display_prod_name
+    display_prod_name = (cand.name or "").strip() or "海外社交新品"
+    display_company = (cand.company_name or display_prod_name).strip() or display_prod_name
 
     # 7. 融资回填与外部参考链接全中文整理
     unverified_funding_set = {"", "未公开披露融资", "早期独立产品", "未公开披露"}
