@@ -2,10 +2,12 @@
 # Social Radar 定时巡检与钉钉回执 Cloudflare Worker 配置
 # ----------------------------------------------------------------------------
 # 密钥一律通过 `wrangler secret put` 注入，绝不写入本文件或代码仓：
-#   - DEEPSEEK_API_KEY       DeepSeek 搜索与拆解模型密钥
-#   - DINGTALK_WEBHOOK_URL   钉钉自定义机器人 Webhook 完整地址
-#   - DINGTALK_SIGN_SECRET   （可选）钉钉自定义机器人 SEC 加签密钥
-#   - CRON_TRIGGER_TOKEN     手动 HTTP 触发接口 Bearer 令牌
+#   - DEEPSEEK_API_KEY          DeepSeek 搜索与拆解模型密钥
+#   - DINGTALK_WEBHOOK_URL      钉钉正式推送通道 Webhook 完整地址
+#   - DINGTALK_TEST_WEBHOOK_URL 钉钉测试推送通道 Webhook 完整地址
+#   - DINGTALK_SIGN_SECRET      （可选）正式通道 SEC 加签密钥
+#   - DINGTALK_TEST_SIGN_SECRET （可选）测试通道 SEC 加签密钥
+#   - CRON_TRIGGER_TOKEN        手动 HTTP 触发接口 Bearer 令牌
 # ============================================================================
 
 name = "vc-radar-cron"

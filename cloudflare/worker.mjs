@@ -8,7 +8,7 @@
 
 import { createHash, timingSafeEqual } from "node:crypto";
 import { formatBeijingSlot, sendDingtalkReceipt } from "./dingtalk.mjs";
-import { R2_LAST_RUN_KEY, beijingStamp, runSocialRadarPatrol } from "./pipeline.mjs";
+import { R2_DATA_KEY, R2_LAST_RUN_KEY, beijingStamp, runSocialRadarPatrol } from "./pipeline.mjs";
 
 const JSON_HEADERS = Object.freeze({
   "content-type": "application/json; charset=utf-8",
@@ -55,15 +55,63 @@ async function saveLastRun(mediaBucket, summary) {
   } catch {}
 }
 
-async function readLastRun(mediaBucket) {
+async function readR2ObjectJson(mediaBucket, key) {
   if (!mediaBucket || typeof mediaBucket.get !== "function") return null;
   try {
-    const obj = await mediaBucket.get(R2_LAST_RUN_KEY);
+    const obj = await mediaBucket.get(key);
     if (!obj) return null;
     return JSON.parse(await obj.text());
   } catch {
     return null;
   }
+}
+
+async function readLastRun(mediaBucket) {
+  return readR2ObjectJson(mediaBucket, R2_LAST_RUN_KEY);
+}
+
+export async function replayLastPatrolReceipt(
+  env,
+  { channel = "prod", nowMs = Date.now(), fetchImpl = globalThis.fetch } = {}
+) {
+  const targetChannel = channel === "test" ? "test" : "prod";
+  const lastRun = await readLastRun(env?.MEDIA);
+  if (!lastRun) {
+    return { ok: false, status: 404, error: "NO_LAST_RUN", message: "尚无历史巡检回执记录" };
+  }
+  const dataJson = await readR2ObjectJson(env?.MEDIA, R2_DATA_KEY);
+  const products = Array.isArray(dataJson?.products) ? dataJson.products : [];
+  const byId = new Map(products.map((p) => [p.id, p]));
+  const admittedIds = Array.isArray(lastRun.admittedNewIds) ? lastRun.admittedNewIds : [];
+  const admittedNames = Array.isArray(lastRun.admittedNewNames) ? lastRun.admittedNewNames : [];
+  const admittedNew = admittedIds.map(
+    (id, idx) =>
+      byId.get(id) || {
+        id,
+        name: admittedNames[idx] || id,
+        channel: "chart",
+        hook: "已收录至线上社交产品雷达库",
+      }
+  );
+  const report = {
+    ...lastRun,
+    admittedNew,
+  };
+  const dingtalk = await sendDingtalkReceipt(report, env, {
+    fetchImpl,
+    timestamp: nowMs,
+    channel: targetChannel,
+  });
+  return {
+    ok: Boolean(dingtalk.ok),
+    status: dingtalk.ok ? 200 : 502,
+    replayed: true,
+    channel: targetChannel,
+    slotLabel: lastRun.slotLabel || "",
+    admittedNewCount: admittedNew.length,
+    admittedNewNames: admittedNew.map((p) => p.name),
+    dingtalk,
+  };
 }
 
 export async function executePatrolAndNotify(
@@ -72,10 +120,12 @@ export async function executePatrolAndNotify(
     trigger = "cron",
     nowMs = Date.now(),
     notify = true,
+    channel = "prod",
     regions,
     fetchImpl = globalThis.fetch,
   } = {}
 ) {
+  const targetChannel = channel === "test" ? "test" : "prod";
   const slotLabel = formatBeijingSlot(nowMs, trigger);
   const { isoBj } = beijingStamp(nowMs);
   let report;
@@ -89,16 +139,16 @@ export async function executePatrolAndNotify(
     report.slotLabel = slotLabel;
   } catch (err) {
     const fatalError = redactError(err);
-    let dingtalk = { ok: false, skipped: true };
+    let dingtalk = { ok: false, skipped: true, channel: targetChannel };
     if (notify) {
       try {
         dingtalk = await sendDingtalkReceipt(
           { trigger, slotLabel, fatalError },
           env,
-          { fetchImpl, timestamp: nowMs }
+          { fetchImpl, timestamp: nowMs, channel: targetChannel }
         );
       } catch (pushErr) {
-        dingtalk = { ok: false, error: redactError(pushErr) };
+        dingtalk = { ok: false, channel: targetChannel, error: redactError(pushErr) };
       }
     }
     const summary = {
@@ -107,19 +157,28 @@ export async function executePatrolAndNotify(
       runAt: isoBj,
       slotLabel,
       fatalError,
-      dingtalk: { ok: Boolean(dingtalk.ok), skipped: Boolean(dingtalk.skipped), errcode: dingtalk.errcode ?? null },
+      dingtalk: {
+        ok: Boolean(dingtalk.ok),
+        channel: dingtalk.channel || targetChannel,
+        skipped: Boolean(dingtalk.skipped),
+        errcode: dingtalk.errcode ?? null,
+      },
     };
     await saveLastRun(env?.MEDIA, summary);
     console.log(JSON.stringify({ event: "patrol_failed", ...summary }));
     return summary;
   }
 
-  let dingtalk = { ok: false, skipped: true };
+  let dingtalk = { ok: false, skipped: true, channel: targetChannel };
   if (notify) {
     try {
-      dingtalk = await sendDingtalkReceipt(report, env, { fetchImpl, timestamp: nowMs });
+      dingtalk = await sendDingtalkReceipt(report, env, {
+        fetchImpl,
+        timestamp: nowMs,
+        channel: targetChannel,
+      });
     } catch (pushErr) {
-      dingtalk = { ok: false, error: redactError(pushErr) };
+      dingtalk = { ok: false, channel: targetChannel, error: redactError(pushErr) };
     }
   }
 
@@ -142,6 +201,7 @@ export async function executePatrolAndNotify(
     sourceCounts: report.sourceCounts,
     dingtalk: {
       ok: Boolean(dingtalk.ok),
+      channel: dingtalk.channel || targetChannel,
       skipped: Boolean(dingtalk.skipped),
       httpStatus: dingtalk.httpStatus ?? null,
       errcode: dingtalk.errcode ?? null,
@@ -202,11 +262,21 @@ export function createWorkerHandler({ fetchImpl = globalThis.fetch, now = () => 
           return jsonResponse({ ok: false, error: "BAD_JSON" }, 400);
         }
         const notify = body?.notify !== false;
+        const channel = body?.channel === "test" ? "test" : "prod";
+        if (body?.replayLast === true) {
+          const replayRes = await replayLastPatrolReceipt(env, {
+            channel,
+            nowMs: now(),
+            fetchImpl,
+          });
+          return jsonResponse(replayRes, replayRes.status || (replayRes.ok ? 200 : 500));
+        }
         const regions = Array.isArray(body?.regions) ? body.regions : undefined;
         const summary = await executePatrolAndNotify(env, {
           trigger: "manual",
           nowMs: now(),
           notify,
+          channel,
           regions,
           fetchImpl,
         });
