@@ -781,3 +781,98 @@ console.log(JSON.stringify({ prod, searchQueries, receiptText: receipt.actionCar
     assert "冲榜+早期融资 · 种子轮 · 金额未公开" in out["receiptText"]
 
 
+def test_dingtalk_dual_channel_and_replay_last():
+    """验证正式通道 (prod) 与测试通道 (test) 分流，以及 /v1/cron/run 的 replayLast 重放最近一次巡检回执。"""
+    script = r"""
+import { createWorkerHandler } from "./cloudflare/worker.mjs";
+import { R2_DATA_KEY, R2_LAST_RUN_KEY } from "./cloudflare/pipeline.mjs";
+
+const store = new Map();
+const r2 = {
+  async get(key) {
+    if (!store.has(key)) return null;
+    const val = store.get(key);
+    return { async text() { return val; } };
+  },
+  async put(key, val) {
+    store.set(key, String(val));
+  },
+};
+
+store.set(R2_LAST_RUN_KEY, JSON.stringify({
+  ok: true,
+  trigger: "cron",
+  slotLabel: "2026-11-11 08:30（早间巡检）",
+  discovered: 40,
+  processed: 4,
+  admittedNewCount: 1,
+  admittedNewIds: ["p-576cbbe6"],
+  admittedNewNames: ["黑猫嘉年华"],
+  rejectedNew: 1,
+  totalAdmitted: 42,
+}));
+
+store.set(R2_DATA_KEY, JSON.stringify({
+  products: [
+    {
+      id: "p-576cbbe6",
+      name: "黑猫嘉年华",
+      channel: "vc",
+      funding: "种子前轮 · 金额未公开",
+      mech_tags: ["兴趣/品味社区"],
+      hook: "官网只放了个候补登记入口，玩法藏着不露",
+    },
+  ],
+}));
+
+const pushes = [];
+const handler = createWorkerHandler({
+  fetchImpl: async (url, init) => {
+    pushes.push({ url, body: JSON.parse(init.body) });
+    return new Response(JSON.stringify({ errcode: 0, errmsg: "ok" }), { status: 200 });
+  },
+});
+
+const env = {
+  MEDIA: r2,
+  CRON_TRIGGER_TOKEN: "tok-test-123",
+  DINGTALK_WEBHOOK_URL: "https://oapi.dingtalk.com/robot/send?access_token=prod_dummy",
+  DINGTALK_TEST_WEBHOOK_URL: "https://oapi.dingtalk.com/robot/send?access_token=test_dummy",
+  DINGTALK_KEYWORD: "superAgent",
+};
+
+const prodResp = await handler.fetch(
+  new Request("https://vc-radar-cron.example/v1/cron/run", {
+    method: "POST",
+    headers: { Authorization: "Bearer tok-test-123", "Content-Type": "application/json" },
+    body: JSON.stringify({ replayLast: true, channel: "prod" }),
+  }),
+  env
+);
+const testResp = await handler.fetch(
+  new Request("https://vc-radar-cron.example/v1/cron/run", {
+    method: "POST",
+    headers: { Authorization: "Bearer tok-test-123", "Content-Type": "application/json" },
+    body: JSON.stringify({ replayLast: true, channel: "test" }),
+  }),
+  env
+);
+
+console.log(JSON.stringify({
+  prodJson: await prodResp.json(),
+  testJson: await testResp.json(),
+  pushes,
+}));
+"""
+    out = _run_node_mjs(script)
+    assert out["prodJson"]["ok"] is True
+    assert out["prodJson"]["channel"] == "prod"
+    assert out["testJson"]["ok"] is True
+    assert out["testJson"]["channel"] == "test"
+    assert len(out["pushes"]) == 2
+    assert "access_token=prod_dummy" in out["pushes"][0]["url"]
+    assert "access_token=test_dummy" in out["pushes"][1]["url"]
+    assert "黑猫嘉年华" in out["pushes"][0]["body"]["actionCard"]["text"]
+
+
+

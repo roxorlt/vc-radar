@@ -209,14 +209,21 @@ export function formatPatrolReceipt(
 export async function sendDingtalkReceipt(
   report = {},
   env = {},
-  { fetchImpl = globalThis.fetch, timestamp = Date.now() } = {}
+  { fetchImpl = globalThis.fetch, timestamp = Date.now(), channel = "prod" } = {}
 ) {
-  const rawWebhook = cleanStr(env?.DINGTALK_WEBHOOK_URL, 1024);
+  const targetChannel = channel === "test" ? "test" : "prod";
+  const rawWebhook =
+    targetChannel === "test"
+      ? cleanStr(env?.DINGTALK_TEST_WEBHOOK_URL || env?.DINGTALK_WEBHOOK_URL, 1024)
+      : cleanStr(env?.DINGTALK_WEBHOOK_URL, 1024);
   if (!rawWebhook) {
-    return { ok: false, skipped: true, reason: "missing_dingtalk_webhook_url" };
+    return { ok: false, skipped: true, channel: targetChannel, reason: "missing_dingtalk_webhook_url" };
   }
   const keyword = cleanStr(env?.DINGTALK_KEYWORD, 64) || DEFAULT_KEYWORD;
-  const secret = cleanStr(env?.DINGTALK_SIGN_SECRET, 256);
+  const secret =
+    targetChannel === "test"
+      ? cleanStr(env?.DINGTALK_TEST_SIGN_SECRET ?? env?.DINGTALK_SIGN_SECRET, 256)
+      : cleanStr(env?.DINGTALK_SIGN_SECRET, 256);
   const siteBaseUrl = cleanStr(env?.SITE_BASE_URL, 256) || DEFAULT_SITE_URL;
 
   const formatted = formatPatrolReceipt(report, {
@@ -254,6 +261,7 @@ export async function sendDingtalkReceipt(
 
   return {
     ok: platformOk,
+    channel: targetChannel,
     httpStatus: res.status,
     errcode: typeof parsed?.errcode === "number" ? parsed.errcode : null,
     errmsg: typeof parsed?.errmsg === "string" ? redactSecrets(parsed.errmsg).slice(0, 120) : "",
